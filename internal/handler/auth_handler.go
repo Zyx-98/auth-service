@@ -1,0 +1,162 @@
+package handler
+
+import (
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/hatuan/auth-service/internal/dto"
+	"github.com/hatuan/auth-service/internal/service"
+	"github.com/hatuan/auth-service/pkg/apperror"
+	"github.com/hatuan/auth-service/pkg/response"
+	"github.com/hatuan/auth-service/pkg/validator"
+)
+
+type AuthHandler struct {
+	authService *service.AuthService
+}
+
+func NewAuthHandler(authService *service.AuthService) *AuthHandler {
+	return &AuthHandler{
+		authService: authService,
+	}
+}
+
+func (h *AuthHandler) Register(c *gin.Context) {
+	var req dto.RegisterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, apperror.BadRequest("Invalid request", err))
+		return
+	}
+
+	validationErrs := validator.Validate(req)
+	if len(validationErrs) > 0 {
+		response.ValidationErrors(c, validationErrs)
+		return
+	}
+
+	tokenResp, err := h.authService.Register(c.Request.Context(), &req)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Created(c, tokenResp)
+}
+
+func (h *AuthHandler) Login(c *gin.Context) {
+	var req dto.LoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, apperror.BadRequest("Invalid request", err))
+		return
+	}
+
+	validationErrs := validator.Validate(req)
+	if len(validationErrs) > 0 {
+		response.ValidationErrors(c, validationErrs)
+		return
+	}
+
+	loginResp, err := h.authService.Login(c.Request.Context(), &req)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Ok(c, loginResp)
+}
+
+func (h *AuthHandler) Refresh(c *gin.Context) {
+	var req dto.RefreshTokenRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, apperror.BadRequest("Invalid request", err))
+		return
+	}
+
+	validationErrs := validator.Validate(req)
+	if len(validationErrs) > 0 {
+		response.ValidationErrors(c, validationErrs)
+		return
+	}
+
+	tokenResp, err := h.authService.Refresh(c.Request.Context(), &req)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Ok(c, tokenResp)
+}
+
+func (h *AuthHandler) Logout(c *gin.Context) {
+	jti, exists := c.Get("jti")
+	if !exists {
+		response.Error(c, apperror.Unauthorized("Missing JWT claims"))
+		return
+	}
+
+	if err := h.authService.Logout(c.Request.Context(), jti.(string)); err != nil {
+		response.Error(c, apperror.InternalServerError("Failed to logout", err))
+		return
+	}
+
+	response.NoContent(c)
+}
+
+func (h *AuthHandler) LogoutAll(c *gin.Context) {
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		response.Error(c, apperror.Unauthorized("Missing user ID"))
+		return
+	}
+
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		response.Error(c, apperror.InternalServerError("Invalid user ID type", nil))
+		return
+	}
+
+	if err := h.authService.LogoutAllDevices(c.Request.Context(), userID); err != nil {
+		response.Error(c, apperror.InternalServerError("Failed to logout from all devices", err))
+		return
+	}
+
+	response.NoContent(c)
+}
+
+func (h *AuthHandler) Introspect(c *gin.Context) {
+	var req dto.IntrospectRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, apperror.BadRequest("Invalid request", err))
+		return
+	}
+
+	validationErrs := validator.Validate(req)
+	if len(validationErrs) > 0 {
+		response.ValidationErrors(c, validationErrs)
+		return
+	}
+
+	introspectResp := h.authService.Introspect(c.Request.Context(), &req)
+	response.Ok(c, introspectResp)
+}
+
+func (h *AuthHandler) GetProfile(c *gin.Context) {
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		response.Error(c, apperror.Unauthorized("Missing user ID"))
+		return
+	}
+
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		response.Error(c, apperror.InternalServerError("Invalid user ID type", nil))
+		return
+	}
+
+	profile, err := h.authService.GetProfile(c.Request.Context(), userID)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Ok(c, profile)
+}
