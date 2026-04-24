@@ -8,20 +8,24 @@ import (
 	"github.com/hatuan/auth-service/internal/middleware"
 	"github.com/hatuan/auth-service/internal/service"
 	"github.com/hatuan/auth-service/pkg/jwt"
+	"github.com/hatuan/auth-service/pkg/oauth"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
 type App struct {
-	router *gin.Engine
-	db     *gorm.DB
-	cfg    *config.Config
+	router      *gin.Engine
+	db          *gorm.DB
+	cfg         *config.Config
+	redisClient *redis.Client
 }
 
-func NewApp(router *gin.Engine, db *gorm.DB, cfg *config.Config) *App {
+func NewApp(router *gin.Engine, db *gorm.DB, cfg *config.Config, redisClient *redis.Client) *App {
 	return &App{
-		router: router,
-		db:     db,
-		cfg:    cfg,
+		router:      router,
+		db:          db,
+		cfg:         cfg,
+		redisClient: redisClient,
 	}
 }
 
@@ -41,16 +45,26 @@ func (a *App) Setup(
 	authService := service.NewAuthService(userRepo, roleRepo, permissionRepo, sessionRepo, jwtMaker)
 	authHandler := handler.NewAuthHandler(authService)
 
-	a.setupRoutes(authHandler, jwtMaker)
+	googleOAuthClient := oauth.NewGoogleOAuthClient(
+		a.cfg.OAuth.GoogleClientID,
+		a.cfg.OAuth.GoogleClientSecret,
+		a.cfg.OAuth.GoogleRedirectURL,
+	)
+	oauthService := service.NewOAuthService(googleOAuthClient, userRepo, roleRepo, permissionRepo, sessionRepo, jwtMaker)
+	oauthHandler := handler.NewOAuthHandler(oauthService, a.redisClient)
+
+	a.setupRoutes(authHandler, oauthHandler, jwtMaker)
 }
 
-func (a *App) setupRoutes(authHandler *handler.AuthHandler, jwtMaker *jwt.Maker) {
+func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handler.OAuthHandler, jwtMaker *jwt.Maker) {
 	public := a.router.Group("/auth")
 	{
 		public.POST("/register", authHandler.Register)
 		public.POST("/login", authHandler.Login)
 		public.POST("/refresh", authHandler.Refresh)
 		public.POST("/introspect", authHandler.Introspect)
+		public.GET("/login/google", oauthHandler.GoogleLoginRedirect)
+		public.POST("/callback/google", oauthHandler.GoogleCallback)
 	}
 
 	protected := a.router.Group("/auth")

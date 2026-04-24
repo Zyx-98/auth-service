@@ -59,7 +59,7 @@ func main() {
 	permissionRepo := postgresrepo.NewPermissionRepository(db)
 	sessionRepo := redisrepo.NewSessionRepository(redisClient, cfg.JWT.RefreshExpiry)
 
-	authApp := app.NewApp(router, db, cfg)
+	authApp := app.NewApp(router, db, cfg, redisClient)
 	authApp.Setup(userRepo, roleRepo, permissionRepo, sessionRepo)
 
 	srv := &http.Server{
