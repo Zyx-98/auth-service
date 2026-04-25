@@ -134,7 +134,8 @@ func initRedis(addr, password string) (*redis.Client, error) {
 }
 
 func runMigrations(dsn string, logger *zap.Logger) error {
-	m, err := migrate.New("file://migrations", "postgres://"+dsn)
+	// DSN already includes postgres:// prefix
+	m, err := migrate.New("file://migrations", dsn)
 	if err != nil {
 		return err
 	}

@@ -1,4 +1,4 @@
-.PHONY: help build run test lint clean migrate-up migrate-down docker-up docker-down
+.PHONY: help build run test lint clean migrate-up migrate-down docker-build docker-up docker-down docker-logs
 
 help:
 	@echo "Available commands:"
@@ -9,8 +9,10 @@ help:
 	@echo "  make clean         - Clean build artifacts"
 	@echo "  make migrate-up    - Run migrations up"
 	@echo "  make migrate-down  - Run migrations down"
+	@echo "  make docker-build  - Build Docker image"
 	@echo "  make docker-up     - Start Docker containers"
 	@echo "  make docker-down   - Stop Docker containers"
+	@echo "  make docker-logs   - View Docker logs"
 
 build:
 	go build -o bin/server ./cmd/server
@@ -33,6 +35,9 @@ migrate-up:
 
 migrate-down:
 	migrate -path ./migrations -database "postgres://postgres:postgres@localhost:5432/auth_db?sslmode=disable" down
+
+docker-build:
+	docker build -t auth-service:latest .
 
 docker-up:
 	docker-compose up -d

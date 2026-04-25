@@ -32,7 +32,7 @@ services:
       retries: 5
 
   api:
-    build: .
+    image: auth-service:latest
     container_name: auth-api
     ports:
       - "8080:8080"
@@ -46,20 +46,32 @@ services:
       JWT_ACCESS_EXPIRY: 15m
       JWT_REFRESH_SECRET: dev-refresh-secret-change-in-prod
       JWT_REFRESH_EXPIRY: 168h
-      GOOGLE_CLIENT_ID: your-google-client-id.apps.googleusercontent.com
-      GOOGLE_CLIENT_SECRET: your-google-client-secret
+      GOOGLE_CLIENT_ID: your-actual-client-id.apps.googleusercontent.com
+      GOOGLE_CLIENT_SECRET: your-actual-client-secret
       GOOGLE_REDIRECT_URL: http://localhost:8080/auth/callback/google
-      TOTP_ENCRYPTION_KEY: 00000000000000000000000000000000
+      TOTP_ENCRYPTION_KEY: e90cfcd097d9116bc1a66a7ad81851db25b8556769c2ae3fa46e05fef7875edf
       TOTP_ISSUER: AuthService
-      CORS_ALLOWED_ORIGINS: http://localhost:5173
+      CORS_ALLOWED_ORIGINS: http://localhost:5173,http://localhost:3000
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: auth-web
+    ports:
+      - "3000:5173"
+    environment:
+      VITE_API_URL: http://localhost:8080
+    depends_on:
+      - api
     volumes:
-      - .:/app
-    working_dir: /app
+      - ./web:/app/web
+      - /app/web/node_modules
 
 volumes:
   postgres_data:

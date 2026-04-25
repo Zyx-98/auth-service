@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+
+jobs:
+  go-checks:
+    name: Go Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+
+      - name: Run golangci-lint
+        run: golangci-lint run ./...
+
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.out
+          fail_ci_if_error: false
+
+  vue-build:
+    name: Vue Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'web/package-lock.json'
+
+      - name: Install dependencies
+        run: cd web && npm ci
+
+      - name: Run TypeScript check
+        run: cd web && tsc --noEmit
+
+      - name: Build Vue
+        run: cd web && npm run build

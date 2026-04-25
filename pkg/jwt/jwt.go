@@ -1,6 +1,7 @@
 package jwt
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -16,13 +17,38 @@ const (
 )
 
 type Claims struct {
-	UserID      uuid.UUID
-	Email       string
-	Roles       []string
-	Permissions []string
-	JTI         string
-	TokenType   TokenType
+	UserID      uuid.UUID `json:"user_id"`
+	Email       string    `json:"email"`
+	Roles       []string  `json:"roles"`
+	Permissions []string  `json:"permissions"`
+	JTI         string    `json:"jti"`
+	TokenType   TokenType `json:"token_type"`
 	jwt.RegisteredClaims
+}
+
+// UnmarshalJSON handles custom unmarshaling of Claims to properly convert UserID string to UUID
+func (c *Claims) UnmarshalJSON(data []byte) error {
+	type Alias Claims
+	aux := &struct {
+		UserID string `json:"user_id"`
+		*Alias
+	}{
+		Alias: (*Alias)(c),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	if aux.UserID != "" {
+		parsedUUID, err := uuid.Parse(aux.UserID)
+		if err != nil {
+			return fmt.Errorf("failed to parse user_id as UUID: %w", err)
+		}
+		c.UserID = parsedUUID
+	}
+
+	return nil
 }
 
 type TokenPair struct {

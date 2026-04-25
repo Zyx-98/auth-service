@@ -48,7 +48,10 @@ func (a *App) Setup(
 
 	authService := service.NewAuthService(userRepo, roleRepo, permissionRepo, sessionRepo, jwtMaker)
 
-	totpManager, _ := totppkg.NewTOTPManager(a.cfg.TOTP.Issuer, a.cfg.TOTP.EncryptionKey)
+	totpManager, err := totppkg.NewTOTPManager(a.cfg.TOTP.Issuer, a.cfg.TOTP.EncryptionKey)
+	if err != nil {
+		a.logger.Fatal("Failed to initialize TOTP manager", zap.Error(err))
+	}
 	totpService := service.NewTOTPService(totpManager, userRepo)
 
 	authHandler := handler.NewAuthHandler(authService, totpService)
@@ -71,6 +74,7 @@ func (a *App) Setup(
 
 func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handler.OAuthHandler, totpHandler *handler.TOTPHandler, rbacHandler *handler.RBACHandler, jwtMaker *jwt.Maker) {
 	// Global middlewares
+	a.router.Use(middleware.CORSMiddleware(a.cfg.CORS.AllowedOrigins))
 	a.router.Use(middleware.SecurityHeadersMiddleware())
 	a.router.Use(middleware.LoggerMiddleware(a.logger))
 

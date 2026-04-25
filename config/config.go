@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -110,7 +111,7 @@ func Load() (*Config, error) {
 			Issuer:        viper.GetString("TOTP_ISSUER"),
 		},
 		CORS: CORSConfig{
-			AllowedOrigins: viper.GetStringSlice("CORS_ALLOWED_ORIGINS"),
+			AllowedOrigins: parseCORSOrigins(viper.GetString("CORS_ALLOWED_ORIGINS")),
 		},
 		RateLimit: RateLimitConfig{
 			LoginLimit:  viper.GetString("RATE_LIMIT_LOGIN"),
@@ -174,4 +175,17 @@ func loadSecretsFromGCP(cfg *Config) error {
 	}
 
 	return nil
+}
+
+func parseCORSOrigins(originsStr string) []string {
+	if originsStr == "" {
+		return []string{}
+	}
+	var origins []string
+	for _, origin := range strings.Split(originsStr, ",") {
+		if trimmed := strings.TrimSpace(origin); trimmed != "" {
+			origins = append(origins, trimmed)
+		}
+	}
+	return origins
 }
