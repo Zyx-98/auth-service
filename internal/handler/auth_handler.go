@@ -12,11 +12,13 @@ import (
 
 type AuthHandler struct {
 	authService *service.AuthService
+	totpService *service.TOTPService
 }
 
-func NewAuthHandler(authService *service.AuthService) *AuthHandler {
+func NewAuthHandler(authService *service.AuthService, totpService *service.TOTPService) *AuthHandler {
 	return &AuthHandler{
 		authService: authService,
+		totpService: totpService,
 	}
 }
 
@@ -159,4 +161,49 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 	}
 
 	response.Ok(c, profile)
+}
+
+func (h *AuthHandler) VerifyTwoFA(c *gin.Context) {
+	var req dto.TOTPVerifyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, apperror.BadRequest("Invalid request", err))
+		return
+	}
+
+	validationErrs := validator.Validate(req)
+	if len(validationErrs) > 0 {
+		response.ValidationErrors(c, validationErrs)
+		return
+	}
+
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		response.Error(c, apperror.Unauthorized("Missing user ID"))
+		return
+	}
+
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		response.Error(c, apperror.InternalServerError("Invalid user ID type", nil))
+		return
+	}
+
+	valid, err := h.totpService.VerifyLogin(c.Request.Context(), userID, req.Code)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	if !valid {
+		response.Error(c, apperror.Unauthorized("Invalid 2FA code"))
+		return
+	}
+
+	tokenResp, err := h.authService.IssueTempTokens(c.Request.Context(), userID)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Ok(c, tokenResp)
 }

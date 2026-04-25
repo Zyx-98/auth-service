@@ -9,6 +9,7 @@ import (
 	"github.com/hatuan/auth-service/internal/service"
 	"github.com/hatuan/auth-service/pkg/jwt"
 	"github.com/hatuan/auth-service/pkg/oauth"
+	totppkg "github.com/hatuan/auth-service/pkg/totp"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
@@ -43,7 +44,11 @@ func (a *App) Setup(
 	)
 
 	authService := service.NewAuthService(userRepo, roleRepo, permissionRepo, sessionRepo, jwtMaker)
-	authHandler := handler.NewAuthHandler(authService)
+
+	totpManager, _ := totppkg.NewTOTPManager(a.cfg.TOTP.Issuer, a.cfg.TOTP.EncryptionKey)
+	totpService := service.NewTOTPService(totpManager, userRepo)
+
+	authHandler := handler.NewAuthHandler(authService, totpService)
 
 	googleOAuthClient := oauth.NewGoogleOAuthClient(
 		a.cfg.OAuth.GoogleClientID,
@@ -53,10 +58,12 @@ func (a *App) Setup(
 	oauthService := service.NewOAuthService(googleOAuthClient, userRepo, roleRepo, permissionRepo, sessionRepo, jwtMaker)
 	oauthHandler := handler.NewOAuthHandler(oauthService, a.redisClient)
 
-	a.setupRoutes(authHandler, oauthHandler, jwtMaker)
+	totpHandler := handler.NewTOTPHandler(totpService)
+
+	a.setupRoutes(authHandler, oauthHandler, totpHandler, jwtMaker)
 }
 
-func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handler.OAuthHandler, jwtMaker *jwt.Maker) {
+func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handler.OAuthHandler, totpHandler *handler.TOTPHandler, jwtMaker *jwt.Maker) {
 	public := a.router.Group("/auth")
 	{
 		public.POST("/register", authHandler.Register)
@@ -73,6 +80,10 @@ func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handle
 		protected.POST("/logout", authHandler.Logout)
 		protected.POST("/logout-all", authHandler.LogoutAll)
 		protected.GET("/me", authHandler.GetProfile)
+		protected.POST("/2fa/setup", totpHandler.Setup)
+		protected.POST("/2fa/verify", totpHandler.Verify)
+		protected.POST("/2fa/disable", totpHandler.Disable)
+		protected.POST("/2fa/verify-login", authHandler.VerifyTwoFA)
 	}
 }
 

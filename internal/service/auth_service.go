@@ -71,7 +71,7 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 		}
 	}
 
-	return s.issueTokens(ctx, user)
+	return s.IssueTokens(ctx, user)
 }
 
 func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.LoginResponse, error) {
@@ -99,7 +99,7 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Lo
 		}, nil
 	}
 
-	tokenResp, err := s.issueTokens(ctx, user)
+	tokenResp, err := s.IssueTokens(ctx, user)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +137,7 @@ func (s *AuthService) Refresh(ctx context.Context, req *dto.RefreshTokenRequest)
 		return nil, apperror.InternalServerError("Failed to revoke old token", err)
 	}
 
-	return s.issueTokens(ctx, user)
+	return s.IssueTokens(ctx, user)
 }
 
 func (s *AuthService) Logout(ctx context.Context, jti string) error {
@@ -207,7 +207,7 @@ func (s *AuthService) GetProfile(ctx context.Context, userID uuid.UUID) (*dto.Us
 	}, nil
 }
 
-func (s *AuthService) issueTokens(ctx context.Context, user *entity.User) (*dto.TokenResponse, error) {
+func (s *AuthService) IssueTokens(ctx context.Context, user *entity.User) (*dto.TokenResponse, error) {
 	roleNames := make([]string, len(user.Roles))
 	for i, r := range user.Roles {
 		roleNames[i] = r.Name
@@ -262,4 +262,17 @@ func (s *AuthService) createTempToken(ctx context.Context, user *entity.User) (s
 		return "", apperror.InternalServerError("Failed to create temp token", err)
 	}
 	return token, nil
+}
+
+func (s *AuthService) IssueTempTokens(ctx context.Context, userID uuid.UUID) (*dto.TokenResponse, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, apperror.InternalServerError("Failed to fetch user", err)
+	}
+
+	if user == nil {
+		return nil, apperror.NotFound("User not found")
+	}
+
+	return s.IssueTokens(ctx, user)
 }
