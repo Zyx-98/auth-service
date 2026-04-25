@@ -234,16 +234,6 @@ In production, secrets are loaded from **GCP Secret Manager** (see `GCP_SETUP.md
    curl https://auth-service-HASH.run.app/health
    ```
 
-### Cost Estimate
-
-| Service | Cost | Notes |
-|---------|------|-------|
-| Cloud Run | $0.40/M requests | Scale-to-zero, 256MB |
-| Cloud SQL | ~$3/month | Shared tier, pauses after 90 days |
-| Cloud Memorystore | ~$1.50/month | 1GB basic tier |
-| Secrets | Free | 6 free secrets included |
-| **Total** | **~$5-10/month** | Low-traffic production |
-
 ## Security
 
 - ✅ **Password hashing**: bcrypt cost=12

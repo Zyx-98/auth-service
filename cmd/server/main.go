@@ -36,31 +36,20 @@ func main() {
 	}
 	defer logger.Sync()
 
-	db, err := initDB(cfg.Database.URL, logger)
-	if err != nil {
-		logger.Fatal("Failed to initialize database", zap.Error(err))
-	}
+	logger.Info("Config loaded", zap.Int("port", cfg.Server.Port), zap.String("env", cfg.Server.Env))
 
-	redisClient, err := initRedis(cfg.Redis.Addr, cfg.Redis.Password)
-	if err != nil {
-		logger.Fatal("Failed to initialize Redis", zap.Error(err))
-	}
-	defer redisClient.Close()
+	var db *gorm.DB
+	var redisClient *redis.Client
 
-	if err := runMigrations(cfg.Database.URL, logger); err != nil {
-		logger.Fatal("Failed to run migrations", zap.Error(err))
-	}
-
+	// Start server first so Cloud Run health check passes
+	// Then attempt to initialize dependencies asynchronously
 	gin.SetMode(ginMode(cfg.Server.Env))
 	router := gin.Default()
 
-	userRepo := postgresrepo.NewUserRepository(db)
-	roleRepo := postgresrepo.NewRoleRepository(db)
-	permissionRepo := postgresrepo.NewPermissionRepository(db)
-	sessionRepo := redisrepo.NewSessionRepository(redisClient, cfg.JWT.RefreshExpiry)
-
-	authApp := app.NewApp(router, db, cfg, redisClient, logger)
-	authApp.Setup(userRepo, roleRepo, permissionRepo, sessionRepo)
+	// Add a basic health endpoint that works before DB is ready
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
@@ -70,12 +59,55 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	// Start server in background
 	go func() {
 		logger.Info("Starting server", zap.String("addr", srv.Addr))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Fatal("Server error", zap.Error(err))
 		}
 	}()
+
+	// Try to initialize database with retries
+	for i := 0; i < 5; i++ {
+		var initErr error
+		db, initErr = initDB(cfg.Database.URL, logger)
+		if initErr == nil {
+			break
+		}
+		logger.Warn("Failed to initialize database, retrying...", zap.Error(initErr), zap.Int("attempt", i+1))
+		time.Sleep(time.Duration(i+1) * 3 * time.Second)
+	}
+	if db == nil {
+		logger.Fatal("Failed to initialize database after retries")
+	}
+
+	// Try to initialize Redis with retries
+	for i := 0; i < 5; i++ {
+		var initErr error
+		redisClient, initErr = initRedis(cfg.Redis.Addr, cfg.Redis.Password)
+		if initErr == nil {
+			break
+		}
+		logger.Warn("Failed to initialize Redis, retrying...", zap.Error(initErr), zap.Int("attempt", i+1))
+		time.Sleep(time.Duration(i+1) * 3 * time.Second)
+	}
+	if redisClient == nil {
+		logger.Fatal("Failed to initialize Redis after retries")
+	}
+	defer redisClient.Close()
+
+	if err := runMigrations(cfg.Database.URL, logger); err != nil {
+		logger.Fatal("Failed to run migrations", zap.Error(err))
+	}
+
+	// Setup the app with all repositories
+	userRepo := postgresrepo.NewUserRepository(db)
+	roleRepo := postgresrepo.NewRoleRepository(db)
+	permissionRepo := postgresrepo.NewPermissionRepository(db)
+	sessionRepo := redisrepo.NewSessionRepository(redisClient, cfg.JWT.RefreshExpiry)
+
+	authApp := app.NewApp(router, db, cfg, redisClient, logger)
+	authApp.Setup(userRepo, roleRepo, permissionRepo, sessionRepo)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -118,9 +150,9 @@ func initDB(dsn string, logger *zap.Logger) (*gorm.DB, error) {
 
 func initRedis(addr, password string) (*redis.Client, error) {
 	client := redis.NewClient(&redis.Options{
-		Addr:       addr,
-		Password:   password,
-		DB:         0,
+		Addr:     addr,
+		Password: password,
+		DB:       0,
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -154,3 +186,4 @@ func ginMode(env string) string {
 	}
 	return gin.DebugMode
 }
+

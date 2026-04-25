@@ -36,6 +36,7 @@ WORKDIR /app
 
 COPY --from=go-builder /app/auth-service .
 COPY --from=go-builder /app/migrations ./migrations
+COPY --from=go-builder /app/web/dist ./web/dist
 
 USER appuser
 

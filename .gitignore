@@ -31,6 +31,7 @@ vendor/
 .env
 .env.local
 .env.*.local
+.github/config.env
 
 # OS
 .DS_Store
