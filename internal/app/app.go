@@ -11,6 +11,7 @@ import (
 	"github.com/hatuan/auth-service/pkg/oauth"
 	totppkg "github.com/hatuan/auth-service/pkg/totp"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -19,14 +20,16 @@ type App struct {
 	db          *gorm.DB
 	cfg         *config.Config
 	redisClient *redis.Client
+	logger      *zap.Logger
 }
 
-func NewApp(router *gin.Engine, db *gorm.DB, cfg *config.Config, redisClient *redis.Client) *App {
+func NewApp(router *gin.Engine, db *gorm.DB, cfg *config.Config, redisClient *redis.Client, logger *zap.Logger) *App {
 	return &App{
 		router:      router,
 		db:          db,
 		cfg:         cfg,
 		redisClient: redisClient,
+		logger:      logger,
 	}
 }
 
@@ -67,16 +70,30 @@ func (a *App) Setup(
 }
 
 func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handler.OAuthHandler, totpHandler *handler.TOTPHandler, rbacHandler *handler.RBACHandler, jwtMaker *jwt.Maker) {
+	// Global middlewares
+	a.router.Use(middleware.SecurityHeadersMiddleware())
+	a.router.Use(middleware.LoggerMiddleware(a.logger))
+
+	// Public auth routes with rate limiting
 	public := a.router.Group("/auth")
+	public.Use(middleware.RateLimitMiddleware(a.redisClient, a.cfg.RateLimit.GlobalLimit))
 	{
-		public.POST("/register", authHandler.Register)
-		public.POST("/login", authHandler.Login)
+		registerLimited := public.Group("")
+		registerLimited.Use(middleware.RateLimitMiddleware(a.redisClient, "3-M"))
+		registerLimited.POST("/register", authHandler.Register)
+
+		loginLimited := public.Group("")
+		loginLimited.Use(middleware.RateLimitMiddleware(a.redisClient, a.cfg.RateLimit.LoginLimit))
+		loginLimited.POST("/login", authHandler.Login)
+		loginLimited.POST("/2fa/verify-login", authHandler.VerifyTwoFA)
+
 		public.POST("/refresh", authHandler.Refresh)
 		public.POST("/introspect", authHandler.Introspect)
 		public.GET("/login/google", oauthHandler.GoogleLoginRedirect)
 		public.POST("/callback/google", oauthHandler.GoogleCallback)
 	}
 
+	// Protected auth routes
 	protected := a.router.Group("/auth")
 	protected.Use(middleware.AuthMiddleware(jwtMaker))
 	{
@@ -86,7 +103,6 @@ func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handle
 		protected.POST("/2fa/setup", totpHandler.Setup)
 		protected.POST("/2fa/verify", totpHandler.Verify)
 		protected.POST("/2fa/disable", totpHandler.Disable)
-		protected.POST("/2fa/verify-login", authHandler.VerifyTwoFA)
 	}
 
 	// RBAC Routes (Admin only)
