@@ -1,8 +1,9 @@
-name: Deploy to Cloud Run
+name: Release Deploy to Cloud Run
 
 on:
   push:
-    branches: [master]
+    tags:
+      - 'v*'
 
 env:
   REGISTRY: us-central1-docker.pkg.dev
@@ -12,7 +13,7 @@ env:
 
 jobs:
   deploy:
-    name: Build and Deploy to Cloud Run
+    name: Build and Deploy Release to Cloud Run
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -30,25 +31,31 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Configure Docker authentication
+      - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGISTRY }}
 
-      - name: Build Docker image
+      - name: Build Docker image with tag
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
           docker build \
+            -t ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/api:$TAG \
             -t ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/api:latest \
-            -t ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/api:${{ github.sha }} \
             .
 
       - name: Push to Artifact Registry
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
+          docker push ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/api:$TAG
           docker push ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/api:latest
-          docker push ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/api:${{ github.sha }}
 
-      - name: Deploy to Cloud Run
+      - name: Deploy to Cloud Run (FREE TIER)
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
           gcloud run deploy ${{ env.SERVICE_NAME }} \
-            --image=${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/api:latest \
+            --image=${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/api:$TAG \
             --region=${{ env.GCP_REGION }} \
             --platform=managed \
             --service-account=${{ secrets.GCP_SERVICE_ACCOUNT }} \
@@ -66,16 +73,16 @@ jobs:
       - name: Get Cloud Run URL
         id: url
         run: |
-          URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
-            --region=${{ env.GCP_REGION }} \
-            --format='value(status.url)')
+          URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.GCP_REGION }} --format='value(status.url)')
           echo "service_url=$URL" >> $GITHUB_OUTPUT
 
-      - name: Deployment Summary
+      - name: Release Deployment Summary
         run: |
-          echo "✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+          echo "## Release Deployment Successful ✅" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Service:** ${{ env.SERVICE_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}/api:${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**URL:** ${{ steps.url.outputs.service_url }}" >> $GITHUB_STEP_SUMMARY
           echo "**Region:** ${{ env.GCP_REGION }}" >> $GITHUB_STEP_SUMMARY
           echo "**Memory:** 256Mi (FREE TIER)" >> $GITHUB_STEP_SUMMARY

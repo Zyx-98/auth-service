@@ -1,6 +1,8 @@
 package app
 
 import (
+	"os"
+
 	"github.com/gin-gonic/gin"
 	"github.com/hatuan/auth-service/config"
 	"github.com/hatuan/auth-service/internal/domain/repository"
@@ -14,6 +16,7 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
+
 
 type App struct {
 	router      *gin.Engine
@@ -70,6 +73,7 @@ func (a *App) Setup(
 	rbacHandler := handler.NewRBACHandler(rbacService)
 
 	a.setupRoutes(authHandler, oauthHandler, totpHandler, rbacHandler, jwtMaker)
+	a.setupStaticFiles()
 }
 
 func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handler.OAuthHandler, totpHandler *handler.TOTPHandler, rbacHandler *handler.RBACHandler, jwtMaker *jwt.Maker) {
@@ -135,4 +139,39 @@ func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handle
 
 func (a *App) Router() *gin.Engine {
 	return a.router
+}
+
+func (a *App) setupStaticFiles() {
+	paths := []string{
+		"./web/dist",
+		"/app/web/dist",
+		"web/dist",
+	}
+
+	var found string
+	for _, path := range paths {
+		if _, err := os.Stat(path); err == nil {
+			found = path
+			a.logger.Info("Serving frontend from", zap.String("path", path))
+			break
+		}
+	}
+
+	if found == "" {
+		a.logger.Warn("Frontend directory not found, API-only mode")
+		return
+	}
+
+	// Use NoRoute to serve the SPA index.html for unmatched routes
+	a.router.NoRoute(func(c *gin.Context) {
+		// Serve static files first
+		indexPath := found + "/index.html"
+		if _, err := os.Stat(found + c.Request.URL.Path); err == nil {
+			// File exists, serve it
+			c.File(found + c.Request.URL.Path)
+			return
+		}
+		// File doesn't exist, serve index.html for SPA routing
+		c.File(indexPath)
+	})
 }

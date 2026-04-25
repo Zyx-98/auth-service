@@ -3,24 +3,25 @@ package config
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
-	"github.com/spf13/viper"
 	secretmanager "cloud.google.com/go/secretmanager/apiv1"
 	secretmanagerpb "cloud.google.com/go/secretmanager/apiv1/secretmanagerpb"
+	"github.com/spf13/viper"
 )
 
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	Redis    RedisConfig
-	JWT      JWTConfig
-	OAuth    OAuthConfig
-	TOTP     TOTPConfig
-	CORS     CORSConfig
+	Server    ServerConfig
+	Database  DatabaseConfig
+	Redis     RedisConfig
+	JWT       JWTConfig
+	OAuth     OAuthConfig
+	TOTP      TOTPConfig
+	CORS      CORSConfig
 	RateLimit RateLimitConfig
-	GCP      GCPConfig
+	GCP       GCPConfig
 }
 
 type ServerConfig struct {
@@ -38,10 +39,10 @@ type RedisConfig struct {
 }
 
 type JWTConfig struct {
-	AccessSecret   string
-	AccessExpiry   time.Duration
-	RefreshSecret  string
-	RefreshExpiry  time.Duration
+	AccessSecret  string
+	AccessExpiry  time.Duration
+	RefreshSecret string
+	RefreshExpiry time.Duration
 }
 
 type OAuthConfig struct {
@@ -75,6 +76,7 @@ func Load() (*Config, error) {
 	viper.AddConfigPath(".")
 	viper.AutomaticEnv()
 
+	viper.SetDefault("PORT", 8080)
 	viper.SetDefault("SERVER_PORT", 8080)
 	viper.SetDefault("ENV", "development")
 	viper.SetDefault("JWT_ACCESS_EXPIRY", "15m")
@@ -85,9 +87,17 @@ func Load() (*Config, error) {
 
 	_ = viper.ReadInConfig()
 
+	port := viper.GetInt("PORT")
+	if port == 0 {
+		port = viper.GetInt("SERVER_PORT")
+	}
+	if port == 0 {
+		port = 8080
+	}
+
 	cfg := &Config{
 		Server: ServerConfig{
-			Port: viper.GetInt("SERVER_PORT"),
+			Port: port,
 			Env:  viper.GetString("ENV"),
 		},
 		Database: DatabaseConfig{
@@ -128,6 +138,16 @@ func Load() (*Config, error) {
 		}
 	}
 
+	// Parse Redis URL if it's a full connection string
+	if strings.HasPrefix(cfg.Redis.Addr, "redis://") {
+		addr, password, err := parseRedisURL(cfg.Redis.Addr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse Redis URL: %w", err)
+		}
+		cfg.Redis.Addr = addr
+		cfg.Redis.Password = password
+	}
+
 	var accessExpiry, refreshExpiry time.Duration
 	var err error
 
@@ -153,12 +173,12 @@ func loadSecretsFromGCP(cfg *Config) error {
 	defer client.Close()
 
 	secrets := map[string]*string{
-		"db-url":                 &cfg.Database.URL,
-		"redis-addr":             &cfg.Redis.Addr,
-		"jwt-access-secret":      &cfg.JWT.AccessSecret,
-		"jwt-refresh-secret":     &cfg.JWT.RefreshSecret,
-		"google-client-id":       &cfg.OAuth.GoogleClientID,
-		"google-client-secret":   &cfg.OAuth.GoogleClientSecret,
+		"db-url":               &cfg.Database.URL,
+		"redis-url":            &cfg.Redis.Addr,
+		"jwt-access-secret":    &cfg.JWT.AccessSecret,
+		"jwt-refresh-secret":   &cfg.JWT.RefreshSecret,
+		"google-client-id":     &cfg.OAuth.GoogleClientID,
+		"google-client-secret": &cfg.OAuth.GoogleClientSecret,
 	}
 
 	for secretName, target := range secrets {
@@ -188,4 +208,16 @@ func parseCORSOrigins(originsStr string) []string {
 		}
 	}
 	return origins
+}
+
+func parseRedisURL(redisURL string) (string, string, error) {
+	parsed, err := url.Parse(redisURL)
+	if err != nil {
+		return "", "", err
+	}
+
+	password, _ := parsed.User.Password()
+	host := parsed.Host
+
+	return host, password, nil
 }

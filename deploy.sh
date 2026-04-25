@@ -14,15 +14,39 @@ if ! command -v gcloud &> /dev/null; then
     exit 1
 fi
 
-# Step 1: Create GCP Project
+# Step 1: Get or Create GCP Project
 echo ""
-echo "📦 Step 1: Creating GCP Project..."
+echo "📦 Step 1: Setting up GCP Project..."
 PROJECT_NAME="auth-service-demo"
-PROJECT_ID="${PROJECT_NAME}-$(date +%s | tail -c 6)"
 
-gcloud projects create $PROJECT_ID --name="$PROJECT_NAME"
+# Check if project already exists
+EXISTING_PROJECT=$(gcloud projects list --format='value(projectId)' --filter="name:$PROJECT_NAME" | head -1)
+if [ -n "$EXISTING_PROJECT" ]; then
+    PROJECT_ID=$EXISTING_PROJECT
+    echo "✅ Using existing project: $PROJECT_ID"
+else
+    PROJECT_ID="${PROJECT_NAME}-$(date +%s | tail -c 6)"
+    gcloud projects create $PROJECT_ID --name="$PROJECT_NAME"
+    echo "✅ Project created: $PROJECT_ID"
+fi
+
 gcloud config set project $PROJECT_ID
-echo "✅ Project created: $PROJECT_ID"
+
+# Step 1b: Link Billing Account (if not already linked)
+echo ""
+echo "💳 Step 1b: Ensuring billing is enabled..."
+BILLING_STATUS=$(gcloud billing projects describe $PROJECT_ID --format='value(billingEnabled)' 2>/dev/null || echo "false")
+if [ "$BILLING_STATUS" != "True" ]; then
+    BILLING_ACCOUNT=$(gcloud billing accounts list --format='value(name)' --filter='open=true' | head -1)
+    if [ -z "$BILLING_ACCOUNT" ]; then
+        echo "❌ No active billing account found. Please enable billing at https://console.cloud.google.com/billing"
+        exit 1
+    fi
+    gcloud billing projects link $PROJECT_ID --billing-account=$BILLING_ACCOUNT || true
+    echo "✅ Billing account linked"
+else
+    echo "✅ Billing already enabled"
+fi
 
 # Step 2: Enable APIs
 echo ""
