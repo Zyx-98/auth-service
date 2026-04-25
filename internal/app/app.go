@@ -60,10 +60,13 @@ func (a *App) Setup(
 
 	totpHandler := handler.NewTOTPHandler(totpService)
 
-	a.setupRoutes(authHandler, oauthHandler, totpHandler, jwtMaker)
+	rbacService := service.NewRBACService(roleRepo, permissionRepo, userRepo)
+	rbacHandler := handler.NewRBACHandler(rbacService)
+
+	a.setupRoutes(authHandler, oauthHandler, totpHandler, rbacHandler, jwtMaker)
 }
 
-func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handler.OAuthHandler, totpHandler *handler.TOTPHandler, jwtMaker *jwt.Maker) {
+func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handler.OAuthHandler, totpHandler *handler.TOTPHandler, rbacHandler *handler.RBACHandler, jwtMaker *jwt.Maker) {
 	public := a.router.Group("/auth")
 	{
 		public.POST("/register", authHandler.Register)
@@ -84,6 +87,29 @@ func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handle
 		protected.POST("/2fa/verify", totpHandler.Verify)
 		protected.POST("/2fa/disable", totpHandler.Disable)
 		protected.POST("/2fa/verify-login", authHandler.VerifyTwoFA)
+	}
+
+	// RBAC Routes (Admin only)
+	admin := a.router.Group("/admin")
+	admin.Use(middleware.AuthMiddleware(jwtMaker))
+	admin.Use(middleware.AdminMiddleware())
+	{
+		// Role Management
+		admin.POST("/roles", rbacHandler.CreateRole)
+		admin.GET("/roles", rbacHandler.ListRoles)
+		admin.GET("/roles/:id", rbacHandler.GetRole)
+		admin.PUT("/roles/:id", rbacHandler.UpdateRole)
+		admin.DELETE("/roles/:id", rbacHandler.DeleteRole)
+
+		// Permission Management
+		admin.POST("/permissions", rbacHandler.CreatePermission)
+		admin.GET("/permissions", rbacHandler.ListPermissions)
+		admin.DELETE("/permissions/:id", rbacHandler.DeletePermission)
+
+		// User Role Assignment
+		admin.POST("/users/:user_id/roles", rbacHandler.AssignRoleToUser)
+		admin.DELETE("/users/:user_id/roles/:role_id", rbacHandler.RemoveRoleFromUser)
+		admin.GET("/users/:user_id/roles", rbacHandler.GetUserRoles)
 	}
 }
 
