@@ -1,7 +1,16 @@
 import axios from 'axios'
 import type { AxiosInstance } from 'axios'
 
-const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080'
+const getApiUrl = (): string => {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL
+  }
+
+  const { protocol, hostname, port } = window.location
+  return `${protocol}//${hostname}${port ? `:${port}` : ''}`
+}
+
+const apiUrl = getApiUrl()
 
 const client: AxiosInstance = axios.create({
   baseURL: apiUrl,
