@@ -170,7 +170,9 @@ func loadSecretsFromGCP(cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to create secret manager client: %w", err)
 	}
-	defer client.Close()
+	defer func() {
+		_ = client.Close()
+	}()
 
 	secrets := map[string]*string{
 		"db-url":               &cfg.Database.URL,

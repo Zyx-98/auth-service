@@ -1,6 +1,6 @@
 module github.com/hatuan/auth-service
 
-go 1.26.1
+go 1.26
 
 require (
 	cloud.google.com/go/secretmanager v1.19.0

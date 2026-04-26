@@ -34,7 +34,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize logger: %v", err)
 	}
-	defer logger.Sync()
+	defer func() {
+		_ = logger.Sync()
+	}()
 
 	logger.Info("Config loaded", zap.Int("port", cfg.Server.Port), zap.String("env", cfg.Server.Env))
 
@@ -94,7 +96,11 @@ func main() {
 	if redisClient == nil {
 		logger.Fatal("Failed to initialize Redis after retries")
 	}
-	defer redisClient.Close()
+	defer func() {
+		if err := redisClient.Close(); err != nil {
+			logger.Warn("Failed to close Redis client", zap.Error(err))
+		}
+	}()
 
 	if err := runMigrations(cfg.Database.URL, logger); err != nil {
 		logger.Fatal("Failed to run migrations", zap.Error(err))
@@ -186,4 +192,3 @@ func ginMode(env string) string {
 	}
 	return gin.DebugMode
 }
-
