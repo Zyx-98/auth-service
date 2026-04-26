@@ -5,11 +5,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/hatuan/auth-service/internal/dto"
 	"github.com/hatuan/auth-service/internal/service"
 	"github.com/hatuan/auth-service/pkg/apperror"
 	"github.com/hatuan/auth-service/pkg/response"
-	"github.com/hatuan/auth-service/pkg/validator"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -42,31 +40,39 @@ func (h *OAuthHandler) GoogleLoginRedirect(c *gin.Context) {
 }
 
 func (h *OAuthHandler) GoogleCallback(c *gin.Context) {
-	var req dto.GoogleLoginRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperror.BadRequest("Invalid request", err))
+	code := c.Query("code")
+	state := c.Query("state")
+
+	if code == "" || state == "" {
+		c.HTML(http.StatusBadRequest, "error.html", gin.H{
+			"error": "Missing code or state parameter",
+		})
 		return
 	}
 
-	validationErrs := validator.Validate(req)
-	if len(validationErrs) > 0 {
-		response.ValidationErrors(c, validationErrs)
-		return
-	}
-
-	exists, err := h.redisClient.Exists(c.Request.Context(), "oauth_state:"+req.State).Result()
+	exists, err := h.redisClient.Exists(c.Request.Context(), "oauth_state:"+state).Result()
 	if err != nil || exists == 0 {
-		response.Error(c, apperror.Unauthorized("Invalid or expired state"))
+		c.HTML(http.StatusUnauthorized, "error.html", gin.H{
+			"error": "Invalid or expired state",
+		})
 		return
 	}
 
-	h.redisClient.Del(c.Request.Context(), "oauth_state:"+req.State)
+	h.redisClient.Del(c.Request.Context(), "oauth_state:"+state)
 
-	callbackResp, err := h.oauthService.HandleGoogleCallback(c.Request.Context(), req.Code)
+	callbackResp, err := h.oauthService.HandleGoogleCallback(c.Request.Context(), code)
 	if err != nil {
-		response.Error(c, err)
+		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+			"error": err.Error(),
+		})
 		return
 	}
 
-	response.Ok(c, callbackResp)
+	c.HTML(http.StatusOK, "oauth_callback.html", gin.H{
+		"access_token":  callbackResp.AccessToken,
+		"refresh_token": callbackResp.RefreshToken,
+		"expires_in":    callbackResp.ExpiresIn,
+		"token_type":    callbackResp.TokenType,
+		"is_new_user":   callbackResp.IsNewUser,
+	})
 }

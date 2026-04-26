@@ -42,6 +42,9 @@ func (a *App) Setup(
 	permissionRepo repository.PermissionRepository,
 	sessionRepo repository.SessionRepository,
 ) {
+	// Load templates for OAuth callback
+	a.router.LoadHTMLGlob("templates/*.html")
+
 	jwtMaker := jwt.NewMaker(
 		a.cfg.JWT.AccessSecret,
 		a.cfg.JWT.RefreshSecret,
@@ -98,7 +101,7 @@ func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handle
 		public.POST("/refresh", authHandler.Refresh)
 		public.POST("/introspect", authHandler.Introspect)
 		public.GET("/login/google", oauthHandler.GoogleLoginRedirect)
-		public.POST("/callback/google", oauthHandler.GoogleCallback)
+		public.GET("/callback/google", oauthHandler.GoogleCallback)
 	}
 
 	// Protected auth routes
