@@ -42,6 +42,9 @@ func (a *App) Setup(
 	permissionRepo repository.PermissionRepository,
 	sessionRepo repository.SessionRepository,
 ) {
+	// Load templates for OAuth callback
+	a.router.LoadHTMLGlob("templates/*.html")
+
 	jwtMaker := jwt.NewMaker(
 		a.cfg.JWT.AccessSecret,
 		a.cfg.JWT.RefreshSecret,
@@ -64,8 +67,8 @@ func (a *App) Setup(
 		a.cfg.OAuth.GoogleClientSecret,
 		a.cfg.OAuth.GoogleRedirectURL,
 	)
-	oauthService := service.NewOAuthService(googleOAuthClient, userRepo, roleRepo, permissionRepo, sessionRepo, jwtMaker)
-	oauthHandler := handler.NewOAuthHandler(oauthService, a.redisClient)
+	oauthService := service.NewOAuthService(googleOAuthClient, userRepo, roleRepo, permissionRepo, sessionRepo, totpService, jwtMaker)
+	oauthHandler := handler.NewOAuthHandler(oauthService, a.redisClient, a.logger)
 
 	totpHandler := handler.NewTOTPHandler(totpService)
 
@@ -98,7 +101,8 @@ func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handle
 		public.POST("/refresh", authHandler.Refresh)
 		public.POST("/introspect", authHandler.Introspect)
 		public.GET("/login/google", oauthHandler.GoogleLoginRedirect)
-		public.POST("/callback/google", oauthHandler.GoogleCallback)
+		public.GET("/callback/google", oauthHandler.GoogleCallback)
+		public.POST("/verify-oauth-totp", oauthHandler.VerifyOAuthTOTP)
 	}
 
 	// Protected auth routes
@@ -109,6 +113,7 @@ func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handle
 		protected.POST("/logout-all", authHandler.LogoutAll)
 		protected.GET("/me", authHandler.GetProfile)
 		protected.POST("/2fa/setup", totpHandler.Setup)
+		protected.GET("/2fa/qrcode", totpHandler.GetQRCode)
 		protected.POST("/2fa/verify", totpHandler.Verify)
 		protected.POST("/2fa/disable", totpHandler.Disable)
 	}

@@ -72,7 +72,9 @@ func (c *GoogleOAuthClient) fetchUserInfo(ctx context.Context, accessToken strin
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("google userinfo returned status %d", resp.StatusCode)

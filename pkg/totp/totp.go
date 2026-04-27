@@ -5,6 +5,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/base32"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
+	"github.com/skip2/go-qrcode"
 )
 
 type TOTPManager struct {
@@ -54,11 +56,40 @@ func (m *TOTPManager) GenerateSecret(email string) (*SecretInfo, error) {
 	secretString := key.Secret()
 	otpauthURL := key.URL()
 
+	// Generate QR code image
+	qrCodeImage, err := qrcode.Encode(otpauthURL, qrcode.Medium, 256)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate QR code: %w", err)
+	}
+
+	// Convert to base64 data URL
+	qrCodeDataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(qrCodeImage)
+
 	return &SecretInfo{
 		Secret:  secretString,
-		QRCode:  otpauthURL,
+		QRCode:  qrCodeDataURL,
 		OTPAuth: otpauthURL,
 	}, nil
+}
+
+func (m *TOTPManager) GenerateQRCode(secret, email string) ([]byte, error) {
+	key, err := totp.Generate(totp.GenerateOpts{
+		Issuer:      m.issuer,
+		AccountName: email,
+		Period:      30,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate TOTP key: %w", err)
+	}
+
+	otpauthURL := key.URL()
+
+	qrCodeImage, err := qrcode.Encode(otpauthURL, qrcode.Medium, 256)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate QR code: %w", err)
+	}
+
+	return qrCodeImage, nil
 }
 
 func (m *TOTPManager) Verify(encryptedSecret, code string) (bool, error) {

@@ -41,30 +41,62 @@
       </div>
     </main>
 
-    <!-- 2FA Verification Modal -->
+    <!-- 2FA Setup Modal (Single Modal) -->
     <div v-if="show2FAModal" class="modal-overlay" @click="close2FAModal">
-      <div class="modal-content" @click.stop>
+      <div class="modal-content large" @click.stop>
         <div class="modal-header">
-          <h2>Verify 2FA Setup</h2>
+          <h2>{{ showVerification ? 'Verify 2FA Setup' : 'Scan QR Code for 2FA' }}</h2>
           <button class="close-btn" @click="close2FAModal">&times;</button>
         </div>
         <div class="modal-body">
-          <p>Enter the 6-digit code from your authenticator app to complete setup:</p>
-          <input
-            v-model="verificationCode"
-            type="text"
-            placeholder="000000"
-            maxlength="6"
-            inputmode="numeric"
-            class="code-input"
-            @keyup.enter="handleVerify2FA"
-          />
-          <p class="hint">This ensures your authenticator app is working correctly</p>
+          <div v-if="!showVerification" class="qr-section">
+            <p class="subtitle">Use your authenticator app</p>
+            <div class="qr-display">
+              <img v-if="tempQRCode" :src="tempQRCode" alt="QR Code" class="qr-image">
+              <p v-else class="loading-qr">Generating QR code...</p>
+            </div>
+            <div class="apps">
+              <div class="app">🔐 Google Authenticator</div>
+              <div class="app">🔐 Authy</div>
+              <div class="app">🔐 Microsoft Authenticator</div>
+            </div>
+            <div class="manual-entry">
+              <p><strong>Can't scan?</strong> Enter manually:</p>
+              <code>{{ tempSecret }}</code>
+            </div>
+          </div>
+
+          <div v-else class="verify-section">
+            <p>Enter the 6-digit code from your authenticator app:</p>
+            <input
+              v-model="verificationCode"
+              type="text"
+              placeholder="000000"
+              maxlength="6"
+              inputmode="numeric"
+              class="code-input"
+              @keyup.enter="handleVerify2FA"
+            />
+            <p class="hint">This ensures your authenticator app is working correctly</p>
+          </div>
         </div>
         <div class="modal-footer">
-          <button @click="close2FAModal" class="btn-cancel">Cancel</button>
-          <button @click="handleVerify2FA" class="btn-verify" :disabled="verificationCode.length !== 6 || verifyLoading">
+          <button v-if="showVerification" @click="showVerification = false" class="btn-cancel">Back</button>
+          <button v-else @click="close2FAModal" class="btn-cancel">Cancel</button>
+          <button
+            v-if="showVerification"
+            @click="handleVerify2FA"
+            class="btn-verify"
+            :disabled="verificationCode.length !== 6 || verifyLoading"
+          >
             {{ verifyLoading ? 'Verifying...' : 'Verify & Enable' }}
+          </button>
+          <button
+            v-else
+            @click="showVerification = true"
+            class="btn-verify"
+          >
+            I've Scanned the QR Code
           </button>
         </div>
         <div v-if="verifyMessage" class="verify-message" :class="verifyMessageType">{{ verifyMessage }}</div>
@@ -140,12 +172,14 @@ const setupMessageType = ref('')
 
 // 2FA Verification Modal
 const show2FAModal = ref(false)
+const showVerification = ref(false)
 const verificationCode = ref('')
 const verifyLoading = ref(false)
 const verifyMessage = ref('')
 const verifyMessageType = ref('')
 const tempQRUri = ref('')
 const tempSecret = ref('')
+const tempQRCode = ref('')
 
 // Backup Codes Modal
 const showBackupCodesModal = ref(false)
@@ -185,140 +219,15 @@ const handleSetupTwoFA = async () => {
   setupMessage.value = ''
   try {
     const response = await authApi.setupTwoFA()
-    const { secret, qr_uri } = response.data.data
+    const { secret, qr_code, otp_auth } = response.data.data
 
     tempSecret.value = secret
-    tempQRUri.value = qr_uri
+    tempQRUri.value = otp_auth
+    tempQRCode.value = qr_code
 
-    // Show QR code in a popup window
-    const qrWindow = window.open('', 'qrcode', 'width=500,height=650,resizable=yes')
-    if (qrWindow) {
-      // Use multiple QR code services for redundancy
-      const qrUrl1 = `https://api.qrserver.com/v1/create-qr-code/?size=350x350&data=${encodeURIComponent(qr_uri)}`
-      const qrUrl2 = `https://quickchart.io/qr?text=${encodeURIComponent(qr_uri)}&size=350`
-
-      qrWindow.document.write(`
-        <html>
-          <head>
-            <title>Scan QR Code for 2FA</title>
-            <meta charset="UTF-8">
-            <style>
-              * { margin: 0; padding: 0; box-sizing: border-box; }
-              body {
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                min-height: 100vh;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                padding: 20px;
-              }
-              .container {
-                background: white;
-                border-radius: 12px;
-                padding: 40px;
-                max-width: 450px;
-                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-                text-align: center;
-              }
-              h1 {
-                color: #333;
-                margin: 0 0 10px 0;
-                font-size: 24px;
-              }
-              .subtitle {
-                color: #666;
-                margin: 0 0 30px 0;
-                font-size: 14px;
-              }
-              .qr-wrapper {
-                background: #f9f9f9;
-                border: 3px solid #ddd;
-                border-radius: 10px;
-                padding: 20px;
-                margin: 20px 0;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                min-height: 380px;
-              }
-              .qr-wrapper img {
-                max-width: 350px;
-                height: auto;
-                border-radius: 5px;
-              }
-              .manual-entry {
-                background: #f0f0f0;
-                padding: 15px;
-                border-radius: 5px;
-                margin: 20px 0;
-              }
-              .manual-entry p {
-                color: #666;
-                font-size: 12px;
-                margin: 0 0 8px 0;
-              }
-              code {
-                background: white;
-                padding: 8px 12px;
-                border-radius: 3px;
-                font-family: 'Courier New', monospace;
-                font-weight: 600;
-                color: #333;
-                word-break: break-all;
-                display: block;
-              }
-              .warning {
-                background: #fff3cd;
-                color: #856404;
-                padding: 12px;
-                border-radius: 5px;
-                margin: 20px 0;
-                font-size: 13px;
-                border-left: 4px solid #ffc107;
-              }
-              .apps {
-                display: flex;
-                justify-content: space-around;
-                margin: 20px 0;
-                font-size: 12px;
-              }
-              .app { color: #666; }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <h1>📱 Scan QR Code</h1>
-              <p class="subtitle">Use your authenticator app</p>
-
-              <div class="qr-wrapper">
-                <img src="${qrUrl1}" alt="QR Code" onerror="this.src='${qrUrl2}'">
-              </div>
-
-              <div class="apps">
-                <div class="app">🔐 Google Authenticator</div>
-                <div class="app">🔐 Authy</div>
-                <div class="app">🔐 Microsoft Authenticator</div>
-              </div>
-
-              <div class="manual-entry">
-                <p><strong>Can't scan?</strong> Enter manually:</p>
-                <code>${secret}</code>
-              </div>
-
-              <div class="warning">
-                ⚠️ <strong>Important:</strong> After scanning, return to this window and verify the 6-digit code from your app
-              </div>
-            </div>
-          </body>
-        </html>
-      `)
-      qrWindow.document.close()
-    }
-
-    // Show verification modal
+    // Show modal with QR code
     show2FAModal.value = true
+    showVerification.value = false
     verificationCode.value = ''
     verifyMessage.value = ''
   } catch (err: any) {
@@ -359,8 +268,11 @@ const handleVerify2FA = async () => {
 
 const close2FAModal = () => {
   show2FAModal.value = false
+  showVerification.value = false
   verificationCode.value = ''
   verifyMessage.value = ''
+  tempQRCode.value = ''
+  tempSecret.value = ''
 }
 
 const closeBackupCodesModal = () => {
@@ -926,5 +838,90 @@ h1 {
   text-align: center;
   color: #999;
   padding: 30px 0;
+}
+
+/* QR Code Display */
+.qr-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.subtitle {
+  color: #666;
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+
+.qr-display {
+  background: #f9f9f9;
+  border: 3px solid #ddd;
+  border-radius: 10px;
+  padding: 20px;
+  margin: 20px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 350px;
+  width: 100%;
+}
+
+.qr-image {
+  max-width: 300px;
+  height: auto;
+  border-radius: 5px;
+}
+
+.loading-qr {
+  color: #999;
+  font-size: 14px;
+}
+
+.apps {
+  display: flex;
+  justify-content: space-around;
+  width: 100%;
+  margin: 20px 0;
+  font-size: 12px;
+}
+
+.app {
+  color: #666;
+}
+
+.manual-entry {
+  background: #f0f0f0;
+  padding: 15px;
+  border-radius: 5px;
+  width: 100%;
+  text-align: left;
+}
+
+.manual-entry p {
+  color: #666;
+  font-size: 12px;
+  margin: 0 0 8px 0;
+}
+
+.manual-entry code {
+  background: white;
+  padding: 8px 12px;
+  border-radius: 3px;
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+  color: #333;
+  word-break: break-all;
+  display: block;
+}
+
+.verify-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.verify-section p {
+  color: #666;
+  margin-bottom: 15px;
 }
 </style>
