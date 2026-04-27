@@ -110,6 +110,33 @@ func (s *TOTPService) VerifyLogin(ctx context.Context, userID uuid.UUID, code st
 	return valid, nil
 }
 
+func (s *TOTPService) GetQRCode(ctx context.Context, userID uuid.UUID) ([]byte, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, apperror.InternalServerError("Failed to fetch user", err)
+	}
+
+	if user == nil {
+		return nil, apperror.NotFound("User not found")
+	}
+
+	if user.TOTPSecret == nil {
+		return nil, apperror.BadRequest("2FA not set up", nil)
+	}
+
+	decryptedSecret, err := s.totpManager.DecryptSecret(*user.TOTPSecret)
+	if err != nil {
+		return nil, apperror.InternalServerError("Failed to decrypt secret", err)
+	}
+
+	qrImageBytes, err := s.totpManager.GenerateQRCode(decryptedSecret, user.Email)
+	if err != nil {
+		return nil, apperror.InternalServerError("Failed to generate QR code", err)
+	}
+
+	return qrImageBytes, nil
+}
+
 func (s *TOTPService) Disable(ctx context.Context, userID uuid.UUID, code string) (*dto.TOTPDisableResponse, error) {
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {

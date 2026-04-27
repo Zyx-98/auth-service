@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -9,28 +10,33 @@ import (
 	"github.com/hatuan/auth-service/pkg/apperror"
 	"github.com/hatuan/auth-service/pkg/response"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 )
 
 type OAuthHandler struct {
 	oauthService  *service.OAuthService
 	redisClient   *redis.Client
+	logger        *zap.Logger
 }
 
-func NewOAuthHandler(oauthService *service.OAuthService, redisClient *redis.Client) *OAuthHandler {
+func NewOAuthHandler(oauthService *service.OAuthService, redisClient *redis.Client, logger *zap.Logger) *OAuthHandler {
 	return &OAuthHandler{
 		oauthService:  oauthService,
 		redisClient:   redisClient,
+		logger:        logger,
 	}
 }
 
 func (h *OAuthHandler) GoogleLoginRedirect(c *gin.Context) {
 	state := uuid.New().String()
 
-	if err := h.redisClient.Set(c.Request.Context(), "oauth_state:"+state, "true", 10*60).Err(); err != nil {
+	if err := h.redisClient.Set(c.Request.Context(), "oauth_state:"+state, "true", 10*60*time.Second).Err(); err != nil {
+		h.logger.Error("Failed to store OAuth state in Redis", zap.Error(err), zap.String("state", state))
 		response.Error(c, apperror.InternalServerError("Failed to store state", err))
 		return
 	}
 
+	h.logger.Debug("OAuth state stored", zap.String("state", state))
 	authURL := h.oauthService.GetGoogleAuthURL(state)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -43,7 +49,10 @@ func (h *OAuthHandler) GoogleCallback(c *gin.Context) {
 	code := c.Query("code")
 	state := c.Query("state")
 
+	h.logger.Debug("OAuth callback received", zap.String("state", state), zap.String("code", code[:min(10, len(code))]))
+
 	if code == "" || state == "" {
+		h.logger.Warn("Missing OAuth parameters", zap.String("code", code), zap.String("state", state))
 		c.HTML(http.StatusBadRequest, "error.html", gin.H{
 			"error": "Missing code or state parameter",
 		})
@@ -51,12 +60,18 @@ func (h *OAuthHandler) GoogleCallback(c *gin.Context) {
 	}
 
 	exists, err := h.redisClient.Exists(c.Request.Context(), "oauth_state:"+state).Result()
+	if err != nil {
+		h.logger.Error("Redis error checking state", zap.Error(err), zap.String("state", state))
+	}
 	if err != nil || exists == 0 {
+		h.logger.Warn("State validation failed", zap.Error(err), zap.String("state", state), zap.Int64("exists", exists))
 		c.HTML(http.StatusUnauthorized, "error.html", gin.H{
 			"error": "Invalid or expired state",
 		})
 		return
 	}
+
+	h.logger.Debug("State validated", zap.String("state", state))
 
 	h.redisClient.Del(c.Request.Context(), "oauth_state:"+state)
 

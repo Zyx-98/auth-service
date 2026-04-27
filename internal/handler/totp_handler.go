@@ -76,6 +76,30 @@ func (h *TOTPHandler) Verify(c *gin.Context) {
 	response.Ok(c, verifyResp)
 }
 
+func (h *TOTPHandler) GetQRCode(c *gin.Context) {
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		response.Error(c, apperror.Unauthorized("Missing user ID"))
+		return
+	}
+
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		response.Error(c, apperror.InternalServerError("Invalid user ID type", nil))
+		return
+	}
+
+	qrImageBytes, err := h.totpService.GetQRCode(c.Request.Context(), userID)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	c.Header("Content-Type", "image/png")
+	c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+	c.Data(200, "image/png", qrImageBytes)
+}
+
 func (h *TOTPHandler) Disable(c *gin.Context) {
 	var req dto.TOTPDisableRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

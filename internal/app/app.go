@@ -68,7 +68,7 @@ func (a *App) Setup(
 		a.cfg.OAuth.GoogleRedirectURL,
 	)
 	oauthService := service.NewOAuthService(googleOAuthClient, userRepo, roleRepo, permissionRepo, sessionRepo, jwtMaker)
-	oauthHandler := handler.NewOAuthHandler(oauthService, a.redisClient)
+	oauthHandler := handler.NewOAuthHandler(oauthService, a.redisClient, a.logger)
 
 	totpHandler := handler.NewTOTPHandler(totpService)
 
@@ -112,6 +112,7 @@ func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handle
 		protected.POST("/logout-all", authHandler.LogoutAll)
 		protected.GET("/me", authHandler.GetProfile)
 		protected.POST("/2fa/setup", totpHandler.Setup)
+		protected.GET("/2fa/qrcode", totpHandler.GetQRCode)
 		protected.POST("/2fa/verify", totpHandler.Verify)
 		protected.POST("/2fa/disable", totpHandler.Disable)
 	}
