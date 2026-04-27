@@ -100,6 +100,9 @@ export const authApi = {
 
   googleCallback: (code: string, state: string) =>
     client.post('/auth/callback/google', { code, state }),
+
+  verifyOAuthTOTP: (code: string, totpToken: string) =>
+    client.post('/auth/verify-oauth-totp', { code, totp_token: totpToken }),
 }
 
 export default client

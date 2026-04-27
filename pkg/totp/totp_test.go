@@ -2,10 +2,7 @@ package totp
 
 import (
 	"testing"
-	"time"
 
-	"github.com/pquerna/otp"
-	"github.com/pquerna/otp/totp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -66,14 +63,4 @@ func TestTOTP_EncryptDecrypt_DifferentKey(t *testing.T) {
 
 func TestTOTP_TimeSensitive(t *testing.T) {
 	t.Skip("Verify expects encrypted secret. See EncryptDecrypt test for proper usage.")
-}
-
-// Helper function to get current TOTP code for testing
-func getCurrentCode(secret string) (string, error) {
-	return totp.GenerateCodeCustom(secret, time.Now(), totp.ValidateOpts{
-		Period:    30,
-		Skew:      1,
-		Digits:    6,
-		Algorithm: otp.AlgorithmSHA1,
-	})
 }
