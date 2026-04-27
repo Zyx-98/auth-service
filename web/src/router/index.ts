@@ -3,6 +3,7 @@ import type { RouteRecordRaw } from 'vue-router'
 import LoginPage from '../pages/LoginPage.vue'
 import RegisterPage from '../pages/RegisterPage.vue'
 import TwoFAPage from '../pages/TwoFAPage.vue'
+import OAuthTwoFAPage from '../pages/OAuthTwoFAPage.vue'
 import DashboardPage from '../pages/DashboardPage.vue'
 
 const routes: RouteRecordRaw[] = [
@@ -26,6 +27,12 @@ const routes: RouteRecordRaw[] = [
     path: '/2fa',
     name: 'TwoFA',
     component: TwoFAPage,
+    meta: { requiresAuth: false },
+  },
+  {
+    path: '/2fa-verify',
+    name: 'OAuthTwoFA',
+    component: OAuthTwoFAPage,
     meta: { requiresAuth: false },
   },
   {

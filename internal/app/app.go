@@ -67,7 +67,7 @@ func (a *App) Setup(
 		a.cfg.OAuth.GoogleClientSecret,
 		a.cfg.OAuth.GoogleRedirectURL,
 	)
-	oauthService := service.NewOAuthService(googleOAuthClient, userRepo, roleRepo, permissionRepo, sessionRepo, jwtMaker)
+	oauthService := service.NewOAuthService(googleOAuthClient, userRepo, roleRepo, permissionRepo, sessionRepo, totpService, jwtMaker)
 	oauthHandler := handler.NewOAuthHandler(oauthService, a.redisClient, a.logger)
 
 	totpHandler := handler.NewTOTPHandler(totpService)
@@ -102,6 +102,7 @@ func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handle
 		public.POST("/introspect", authHandler.Introspect)
 		public.GET("/login/google", oauthHandler.GoogleLoginRedirect)
 		public.GET("/callback/google", oauthHandler.GoogleCallback)
+		public.POST("/verify-oauth-totp", oauthHandler.VerifyOAuthTOTP)
 	}
 
 	// Protected auth routes

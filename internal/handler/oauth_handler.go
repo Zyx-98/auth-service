@@ -6,9 +6,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hatuan/auth-service/internal/dto"
 	"github.com/hatuan/auth-service/internal/service"
 	"github.com/hatuan/auth-service/pkg/apperror"
 	"github.com/hatuan/auth-service/pkg/response"
+	"github.com/hatuan/auth-service/pkg/validator"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
@@ -89,5 +91,29 @@ func (h *OAuthHandler) GoogleCallback(c *gin.Context) {
 		"expires_in":    callbackResp.ExpiresIn,
 		"token_type":    callbackResp.TokenType,
 		"is_new_user":   callbackResp.IsNewUser,
+		"totp_required": callbackResp.TOTPRequired,
+		"totp_token":    callbackResp.TOTPToken,
 	})
+}
+
+func (h *OAuthHandler) VerifyOAuthTOTP(c *gin.Context) {
+	var req dto.TOTPVerifyLoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, apperror.BadRequest("Invalid request", err))
+		return
+	}
+
+	validationErrs := validator.Validate(req)
+	if len(validationErrs) > 0 {
+		response.ValidationErrors(c, validationErrs)
+		return
+	}
+
+	oauthResp, err := h.oauthService.VerifyOAuthTOTP(c.Request.Context(), req.TOTPToken, req.Code)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+
+	response.Ok(c, oauthResp)
 }

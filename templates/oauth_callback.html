@@ -52,30 +52,49 @@
 </head>
 <body>
     <div class="container">
-        <h1>Login Successful</h1>
+        <h1 id="title">Login Successful</h1>
         <div class="spinner"></div>
-        <p>Redirecting you back to the application...</p>
-        <p class="success">✓ Authentication complete</p>
+        <p id="message">Redirecting you back to the application...</p>
+        <p class="success" id="status">✓ Authentication complete</p>
     </div>
 
     <script>
-        // Get tokens from server response
-        const tokens = {
-            accessToken: '{{ .access_token }}',
-            refreshToken: '{{ .refresh_token }}',
-            expiresIn: {{ .expires_in }},
-            tokenType: '{{ .token_type }}',
-            isNewUser: {{ .is_new_user }},
+        const data = {
+            totpRequired: Boolean("{{ .totp_required }}" === "true"),
+            totpToken: String("{{ .totp_token }}"),
+            accessToken: String("{{ .access_token }}"),
+            refreshToken: String("{{ .refresh_token }}"),
+            expiresIn: Number("{{ .expires_in }}"),
+            tokenType: String("{{ .token_type }}"),
+            isNewUser: Boolean("{{ .is_new_user }}" === "true")
         };
 
-        // Store tokens in localStorage
-        localStorage.setItem('access_token', tokens.accessToken);
-        localStorage.setItem('refresh_token', tokens.refreshToken);
+        const titleEl = document.getElementById('title');
+        const messageEl = document.getElementById('message');
+        const statusEl = document.getElementById('status');
 
-        // Redirect to dashboard after a short delay
-        setTimeout(() => {
-            window.location.href = '/dashboard';
-        }, 1000);
+        if (data.totpRequired && data.totpToken) {
+            titleEl.textContent = 'Two-Factor Authentication Required';
+            messageEl.textContent = 'Redirecting you to verify your authenticator...';
+            statusEl.textContent = '🔐 Enter your 2FA code';
+
+            localStorage.setItem('totp_token', data.totpToken);
+            localStorage.setItem('is_new_user', data.isNewUser);
+            setTimeout(() => {
+                window.location.href = '/2fa-verify';
+            }, 500);
+        } else {
+            titleEl.textContent = 'Login Successful';
+            messageEl.textContent = 'Redirecting you back to the application...';
+            statusEl.textContent = '✓ Authentication complete';
+
+            localStorage.setItem('access_token', data.accessToken);
+            localStorage.setItem('refresh_token', data.refreshToken);
+
+            setTimeout(() => {
+                window.location.href = '/dashboard';
+            }, 1000);
+        }
     </script>
 </body>
 </html>
