@@ -71,7 +71,8 @@ const handleLogin = async () => {
   loading.value = true
 
   try {
-    const response = await authApi.login(form.value.email, form.value.password)
+    const deviceToken = localStorage.getItem('device_token') || undefined
+    const response = await authApi.login(form.value.email, form.value.password, deviceToken)
     const { data } = response.data
 
     if (data.requires_2fa) {
@@ -93,8 +94,10 @@ const handleLogin = async () => {
 const handleGoogleLogin = async () => {
   loading.value = true
   try {
-    const response = await authApi.googleLoginRedirect()
+    const deviceToken = localStorage.getItem('device_token') || undefined
+    const response = await authApi.googleLoginRedirect(deviceToken)
     const { auth_url } = response.data
+
     window.location.href = auth_url
   } catch (err) {
     error.value = 'Failed to initiate Google login'

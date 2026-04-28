@@ -9,8 +9,9 @@ type RegisterRequest struct {
 }
 
 type LoginRequest struct {
-	Email    string `json:"email" validate:"required,email"`
-	Password string `json:"password" validate:"required"`
+	Email       string `json:"email" validate:"required,email"`
+	Password    string `json:"password" validate:"required"`
+	DeviceToken string `json:"device_token,omitempty"`
 }
 
 type TokenResponse struct {
@@ -21,9 +22,10 @@ type TokenResponse struct {
 }
 
 type LoginResponse struct {
-	RequiresTwoFA bool         `json:"requires_2fa,omitempty"`
-	TempToken     string       `json:"temp_token,omitempty"`
+	RequiresTwoFA bool           `json:"requires_2fa,omitempty"`
+	TempToken     string         `json:"temp_token,omitempty"`
 	Token         *TokenResponse `json:"token,omitempty"`
+	DeviceToken   string         `json:"device_token,omitempty"`
 }
 
 type RefreshTokenRequest struct {

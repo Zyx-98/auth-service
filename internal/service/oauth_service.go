@@ -2,8 +2,11 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hatuan/auth-service/internal/domain/entity"
 	"github.com/hatuan/auth-service/internal/domain/repository"
 	"github.com/hatuan/auth-service/internal/dto"
@@ -13,13 +16,14 @@ import (
 )
 
 type OAuthService struct {
-	googleClient   *oauth.GoogleOAuthClient
-	userRepo       repository.UserRepository
-	roleRepo       repository.RoleRepository
-	permissionRepo repository.PermissionRepository
-	sessionRepo    repository.SessionRepository
-	totpService    *TOTPService
-	jwtMaker       *jwtpkg.Maker
+	googleClient        *oauth.GoogleOAuthClient
+	userRepo            repository.UserRepository
+	roleRepo            repository.RoleRepository
+	permissionRepo      repository.PermissionRepository
+	sessionRepo         repository.SessionRepository
+	trustedDeviceRepo   repository.TrustedDeviceRepository
+	totpService         *TOTPService
+	jwtMaker            *jwtpkg.Maker
 }
 
 func NewOAuthService(
@@ -28,17 +32,19 @@ func NewOAuthService(
 	roleRepo repository.RoleRepository,
 	permissionRepo repository.PermissionRepository,
 	sessionRepo repository.SessionRepository,
+	trustedDeviceRepo repository.TrustedDeviceRepository,
 	totpService *TOTPService,
 	jwtMaker *jwtpkg.Maker,
 ) *OAuthService {
 	return &OAuthService{
-		googleClient:   googleClient,
-		userRepo:       userRepo,
-		roleRepo:       roleRepo,
-		permissionRepo: permissionRepo,
-		sessionRepo:    sessionRepo,
-		totpService:    totpService,
-		jwtMaker:       jwtMaker,
+		googleClient:      googleClient,
+		userRepo:          userRepo,
+		roleRepo:          roleRepo,
+		permissionRepo:    permissionRepo,
+		sessionRepo:       sessionRepo,
+		trustedDeviceRepo: trustedDeviceRepo,
+		totpService:       totpService,
+		jwtMaker:          jwtMaker,
 	}
 }
 
@@ -46,7 +52,7 @@ func (s *OAuthService) GetGoogleAuthURL(state string) string {
 	return s.googleClient.GetAuthURL(state)
 }
 
-func (s *OAuthService) VerifyOAuthTOTP(ctx context.Context, totpToken string, code string) (*dto.OAuthCallbackResponse, error) {
+func (s *OAuthService) VerifyOAuthTOTP(ctx context.Context, totpToken string, code string, userAgent string, ip string, trustDevice bool) (*dto.OAuthCallbackResponse, error) {
 	claims, err := s.jwtMaker.VerifyAccessToken(totpToken)
 	if err != nil {
 		return nil, apperror.Unauthorized("Invalid or expired TOTP token")
@@ -70,10 +76,10 @@ func (s *OAuthService) VerifyOAuthTOTP(ctx context.Context, totpToken string, co
 		return nil, apperror.Unauthorized("Invalid TOTP code")
 	}
 
-	return s.buildFullOAuthResponse(ctx, user)
+	return s.buildFullOAuthResponse(ctx, user, userAgent, ip, trustDevice)
 }
 
-func (s *OAuthService) buildFullOAuthResponse(ctx context.Context, user *entity.User) (*dto.OAuthCallbackResponse, error) {
+func (s *OAuthService) buildFullOAuthResponse(ctx context.Context, user *entity.User, userAgent string, ip string, trustDevice bool) (*dto.OAuthCallbackResponse, error) {
 	roleNames := make([]string, len(user.Roles))
 	for i, r := range user.Roles {
 		roleNames[i] = r.Name
@@ -104,18 +110,30 @@ func (s *OAuthService) buildFullOAuthResponse(ctx context.Context, user *entity.
 		return nil, apperror.InternalServerError("Failed to save session", err)
 	}
 
-	expiresIn := int64(15 * 60)
-
-	return &dto.OAuthCallbackResponse{
+	resp := &dto.OAuthCallbackResponse{
 		AccessToken:  tokenPair.AccessToken,
 		RefreshToken: tokenPair.RefreshToken,
-		ExpiresIn:    expiresIn,
+		ExpiresIn:    int64(15 * 60),
 		TokenType:    "Bearer",
 		TOTPRequired: false,
-	}, nil
+	}
+
+	if trustDevice {
+		deviceToken := s.generateDeviceToken()
+		expiresAt := time.Now().Add(30 * 24 * time.Hour)
+		device := entity.NewTrustedDevice(user.ID, deviceToken, userAgent, ip, expiresAt)
+
+		if err := s.trustedDeviceRepo.Save(ctx, device); err != nil {
+			return nil, apperror.InternalServerError("Failed to save trusted device", err)
+		}
+
+		resp.DeviceToken = deviceToken
+	}
+
+	return resp, nil
 }
 
-func (s *OAuthService) HandleGoogleCallback(ctx context.Context, code string) (*dto.OAuthCallbackResponse, error) {
+func (s *OAuthService) HandleGoogleCallback(ctx context.Context, code string, deviceToken string, userAgent string, ip string) (*dto.OAuthCallbackResponse, error) {
 	googleUser, err := s.googleClient.ExchangeCode(ctx, code)
 	if err != nil {
 		return nil, apperror.Unauthorized("Failed to exchange Google code")
@@ -167,7 +185,7 @@ func (s *OAuthService) HandleGoogleCallback(ctx context.Context, code string) (*
 		return nil, err
 	}
 
-	return s.buildOAuthResponse(ctx, user, isNewUser)
+	return s.buildOAuthResponse(ctx, user, isNewUser, deviceToken, userAgent, ip)
 }
 
 func (s *OAuthService) refreshUserRoles(ctx context.Context, user *entity.User) error {
@@ -185,8 +203,17 @@ func (s *OAuthService) refreshUserRoles(ctx context.Context, user *entity.User) 
 	return nil
 }
 
-func (s *OAuthService) buildOAuthResponse(ctx context.Context, user *entity.User, isNewUser bool) (*dto.OAuthCallbackResponse, error) {
+func (s *OAuthService) buildOAuthResponse(ctx context.Context, user *entity.User, isNewUser bool, deviceToken string, userAgent string, ip string) (*dto.OAuthCallbackResponse, error) {
 	if user.TOTPEnabled {
+		// Check if this device is already trusted
+		if deviceToken != "" {
+			trusted, err := s.trustedDeviceRepo.Exists(ctx, user.ID, deviceToken)
+			if err == nil && trusted {
+				// Device is trusted, skip 2FA
+				return s.buildFullOAuthResponse(ctx, user, userAgent, ip, false)
+			}
+		}
+
 		totpToken, err := s.jwtMaker.CreateCustomToken(user.ID, user.Email, []string{"totp:verify"}, 10*time.Minute, "")
 		if err != nil {
 			return nil, apperror.InternalServerError("Failed to create TOTP token", err)
@@ -239,4 +266,12 @@ func (s *OAuthService) buildOAuthResponse(ctx context.Context, user *entity.User
 		IsNewUser:    isNewUser,
 		TOTPRequired: false,
 	}, nil
+}
+
+func (s *OAuthService) generateDeviceToken() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return uuid.New().String()
+	}
+	return hex.EncodeToString(b)
 }

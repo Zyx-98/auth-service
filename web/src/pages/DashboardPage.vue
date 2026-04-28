@@ -27,7 +27,7 @@
           <div v-else class="action">
             <p>Your account is protected with 2FA.</p>
             <div class="button-group">
-              <button @click="showDevicesModal = true" class="btn-secondary">
+              <button @click="openDevicesModal" class="btn-secondary">
                 🔐 Trusted Devices
               </button>
               <button @click="handleDisableTwoFA" class="btn-disable" :disabled="disableLoading">
@@ -138,20 +138,27 @@
           <button class="close-btn" @click="closeDevicesModal">&times;</button>
         </div>
         <div class="modal-body">
-          <p v-if="devices.length === 0" class="no-devices">No trusted devices yet. After 2FA is enabled, you can trust this device.</p>
+          <p v-if="devices.length === 0" class="no-devices">No trusted devices yet. When you log in and verify with 2FA, you can choose to trust the device.</p>
           <div v-else class="devices-list">
-            <div v-for="device in devices" :key="device.id" class="device-item">
+            <div v-for="device in devices" :key="device.token" class="device-item">
               <div class="device-info">
-                <p class="device-name">{{ device.name }}</p>
-                <p class="device-meta">Trusted on {{ formatDate(device.trusted_at) }}</p>
+                <p class="device-name">{{ device.name || 'Unknown Device' }}</p>
+                <p class="device-meta">Trusted on {{ formatDate(device.created_at) }}</p>
+                <p class="device-ip" v-if="device.ip_address">{{ device.ip_address }}</p>
               </div>
-              <button @click="removeDevice(device.id)" class="btn-remove" :disabled="removingDevice">Remove</button>
+              <button @click="removeDevice(device.token)" class="btn-remove" :disabled="removingDevice">Remove</button>
             </div>
+          </div>
+          <div v-if="devices.length > 0" class="devices-actions">
+            <button @click="revokeAllDevices" class="btn-revoke-all" :disabled="removingDevice || devices.length === 0">
+              {{ removingDevice ? 'Revoking...' : 'Revoke All Devices' }}
+            </button>
           </div>
         </div>
         <div class="modal-footer">
           <button @click="closeDevicesModal" class="btn-done">Done</button>
         </div>
+        <div v-if="deviceMessage" class="device-message" :class="deviceMessageType">{{ deviceMessage }}</div>
       </div>
     </div>
   </div>
@@ -190,6 +197,8 @@ const copyMessage = ref(false)
 const showDevicesModal = ref(false)
 const devices = ref<any[]>([])
 const removingDevice = ref(false)
+const deviceMessage = ref('')
+const deviceMessageType = ref('')
 
 const profile = ref({
   email: '',
@@ -313,19 +322,58 @@ const downloadBackupCodes = () => {
   window.URL.revokeObjectURL(url)
 }
 
-const closeDevicesModal = () => {
-  showDevicesModal.value = false
+const openDevicesModal = async () => {
+  showDevicesModal.value = true
+  deviceMessage.value = ''
+  removingDevice.value = true
+  try {
+    const response = await authApi.getTrustedDevices()
+    devices.value = response.data.data || []
+  } catch (err: any) {
+    deviceMessage.value = err.response?.data?.message || 'Failed to load trusted devices'
+    deviceMessageType.value = 'error'
+    devices.value = []
+  } finally {
+    removingDevice.value = false
+  }
 }
 
-const removeDevice = async (deviceId: string) => {
+const closeDevicesModal = () => {
+  showDevicesModal.value = false
+  deviceMessage.value = ''
+}
+
+const removeDevice = async (deviceToken: string) => {
   if (!confirm('Remove this device? You\'ll need to verify with 2FA again.')) return
 
   removingDevice.value = true
+  deviceMessage.value = ''
   try {
-    // API call to remove device would go here
-    devices.value = devices.value.filter(d => d.id !== deviceId)
-  } catch (err) {
-    console.error('Failed to remove device:', err)
+    await authApi.revokeTrustedDevices()
+    devices.value = devices.value.filter(d => d.token !== deviceToken)
+    deviceMessage.value = 'Device removed successfully'
+    deviceMessageType.value = 'success'
+  } catch (err: any) {
+    deviceMessage.value = err.response?.data?.message || 'Failed to remove device'
+    deviceMessageType.value = 'error'
+  } finally {
+    removingDevice.value = false
+  }
+}
+
+const revokeAllDevices = async () => {
+  if (!confirm('Remove all trusted devices? You\'ll need to verify with 2FA on every login.')) return
+
+  removingDevice.value = true
+  deviceMessage.value = ''
+  try {
+    await authApi.revokeTrustedDevices()
+    devices.value = []
+    deviceMessage.value = 'All devices have been revoked successfully'
+    deviceMessageType.value = 'success'
+  } catch (err: any) {
+    deviceMessage.value = err.response?.data?.message || 'Failed to revoke devices'
+    deviceMessageType.value = 'error'
   } finally {
     removingDevice.value = false
   }
@@ -923,5 +971,61 @@ h1 {
 .verify-section p {
   color: #666;
   margin-bottom: 15px;
+}
+
+/* Device Management Modal */
+.device-ip {
+  margin: 3px 0 0 0;
+  color: #bbb;
+  font-size: 11px;
+  font-family: 'Courier New', monospace;
+}
+
+.devices-actions {
+  margin-top: 20px;
+  display: flex;
+  justify-content: center;
+  border-top: 1px solid #f0f0f0;
+  padding-top: 20px;
+}
+
+.btn-revoke-all {
+  padding: 10px 20px;
+  background: #e74c3c;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.btn-revoke-all:hover:not(:disabled) {
+  background: #c0392b;
+}
+
+.btn-revoke-all:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.device-message {
+  margin-top: 15px;
+  padding: 12px;
+  border-radius: 5px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.device-message.success {
+  background: #d5f4e6;
+  color: #27ae60;
+  border-left: 4px solid #27ae60;
+}
+
+.device-message.error {
+  background: #fadbd8;
+  color: #e74c3c;
+  border-left: 4px solid #e74c3c;
 }
 </style>

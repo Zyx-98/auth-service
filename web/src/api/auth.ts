@@ -68,8 +68,12 @@ export const authApi = {
   register: (email: string, password: string, passwordConfirm: string) =>
     client.post('/auth/register', { email, password, password_confirm: passwordConfirm }),
 
-  login: (email: string, password: string) =>
-    client.post('/auth/login', { email, password }),
+  login: (email: string, password: string, deviceToken?: string) =>
+    client.post('/auth/login', {
+      email,
+      password,
+      ...(deviceToken && { device_token: deviceToken })
+    }),
 
   refreshToken: (refreshToken: string) =>
     client.post('/auth/refresh', { refresh_token: refreshToken }),
@@ -89,20 +93,34 @@ export const authApi = {
   verifyTwoFA: (code: string) =>
     client.post('/auth/2fa/verify', { code }),
 
-  verifyTwoFALogin: (code: string) =>
-    client.post('/auth/2fa/verify-login', { code }),
+  verifyTwoFALogin: (code: string, trustDevice: boolean = false) => {
+    const tempToken = localStorage.getItem('temp_token')
+    return client.post('/auth/2fa/verify-login', { code, trust_device: trustDevice }, {
+      headers: {
+        Authorization: `Bearer ${tempToken}`
+      }
+    })
+  },
 
   disableTwoFA: (code: string) =>
     client.post('/auth/2fa/disable', { code }),
 
-  googleLoginRedirect: () =>
-    client.get('/auth/login/google'),
+  googleLoginRedirect: (deviceToken?: string) =>
+    client.post('/auth/login/google', {
+      ...(deviceToken && { device_token: deviceToken })
+    }),
 
   googleCallback: (code: string, state: string) =>
     client.post('/auth/callback/google', { code, state }),
 
-  verifyOAuthTOTP: (code: string, totpToken: string) =>
-    client.post('/auth/verify-oauth-totp', { code, totp_token: totpToken }),
+  verifyOAuthTOTP: (code: string, totpToken: string, trustDevice: boolean = false) =>
+    client.post('/auth/verify-oauth-totp', { code, totp_token: totpToken, trust_device: trustDevice }),
+
+  getTrustedDevices: () =>
+    client.get('/auth/trusted-devices'),
+
+  revokeTrustedDevices: () =>
+    client.delete('/auth/trusted-devices'),
 }
 
 export default client
