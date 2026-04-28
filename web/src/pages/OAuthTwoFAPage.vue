@@ -20,6 +20,15 @@
           />
         </div>
 
+        <div class="form-group checkbox-group">
+          <input
+            id="trust"
+            v-model="form.trustDevice"
+            type="checkbox"
+          />
+          <label for="trust" class="checkbox-label">Trust this device for 30 days</label>
+        </div>
+
         <button type="submit" :disabled="loading || form.code.length !== 6">
           {{ loading ? 'Verifying...' : 'Verify' }}
         </button>
@@ -45,6 +54,7 @@ const error = ref('')
 
 const form = ref({
   code: '',
+  trustDevice: false,
 })
 
 onMounted(() => {
@@ -64,11 +74,17 @@ const handleVerify = async () => {
       throw new Error('TOTP token not found')
     }
 
-    const response = await authApi.verifyOAuthTOTP(form.value.code, totpToken)
+    const response = await authApi.verifyOAuthTOTP(form.value.code, totpToken, form.value.trustDevice)
     const { data } = response.data
 
     localStorage.setItem('access_token', data.access_token)
     localStorage.setItem('refresh_token', data.refresh_token)
+
+    // Store device token if provided
+    if (data.device_token) {
+      localStorage.setItem('device_token', data.device_token)
+    }
+
     localStorage.removeItem('totp_token')
     localStorage.removeItem('is_new_user')
 
@@ -119,6 +135,28 @@ h1 {
 
 .form-group {
   margin-bottom: 20px;
+}
+
+.checkbox-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.checkbox-group input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  margin: 0;
+}
+
+.checkbox-label {
+  display: inline;
+  margin: 0;
+  font-size: 14px;
+  cursor: pointer;
+  user-select: none;
 }
 
 label {

@@ -30,9 +30,20 @@ func NewOAuthHandler(oauthService *service.OAuthService, redisClient *redis.Clie
 }
 
 func (h *OAuthHandler) GoogleLoginRedirect(c *gin.Context) {
+	var req struct {
+		DeviceToken string `json:"device_token,omitempty"`
+	}
+	_ = c.ShouldBindJSON(&req)
+
 	state := uuid.New().String()
 
-	if err := h.redisClient.Set(c.Request.Context(), "oauth_state:"+state, "true", 10*60*time.Second).Err(); err != nil {
+	// Store state and device_token in Redis
+	stateData := "true"
+	if req.DeviceToken != "" {
+		stateData = req.DeviceToken
+	}
+
+	if err := h.redisClient.Set(c.Request.Context(), "oauth_state:"+state, stateData, 10*60*time.Second).Err(); err != nil {
 		h.logger.Error("Failed to store OAuth state in Redis", zap.Error(err), zap.String("state", state))
 		response.Error(c, apperror.InternalServerError("Failed to store state", err))
 		return
@@ -75,9 +86,22 @@ func (h *OAuthHandler) GoogleCallback(c *gin.Context) {
 
 	h.logger.Debug("State validated", zap.String("state", state))
 
-	h.redisClient.Del(c.Request.Context(), "oauth_state:"+state)
+	// Retrieve device_token from state if present
+	stateData, err := h.redisClient.GetDel(c.Request.Context(), "oauth_state:"+state).Result()
+	if err != nil {
+		h.logger.Error("Failed to retrieve state data", zap.Error(err), zap.String("state", state))
+		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+			"error": "Failed to retrieve state",
+		})
+		return
+	}
 
-	callbackResp, err := h.oauthService.HandleGoogleCallback(c.Request.Context(), code)
+	deviceToken := ""
+	if stateData != "true" {
+		deviceToken = stateData
+	}
+
+	callbackResp, err := h.oauthService.HandleGoogleCallback(c.Request.Context(), code, deviceToken, c.Request.UserAgent(), c.ClientIP())
 	if err != nil {
 		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
 			"error": err.Error(),
@@ -88,6 +112,7 @@ func (h *OAuthHandler) GoogleCallback(c *gin.Context) {
 	c.HTML(http.StatusOK, "oauth_callback.html", gin.H{
 		"access_token":  callbackResp.AccessToken,
 		"refresh_token": callbackResp.RefreshToken,
+		"device_token":  callbackResp.DeviceToken,
 		"expires_in":    callbackResp.ExpiresIn,
 		"token_type":    callbackResp.TokenType,
 		"is_new_user":   callbackResp.IsNewUser,
@@ -109,7 +134,10 @@ func (h *OAuthHandler) VerifyOAuthTOTP(c *gin.Context) {
 		return
 	}
 
-	oauthResp, err := h.oauthService.VerifyOAuthTOTP(c.Request.Context(), req.TOTPToken, req.Code)
+	userAgent := c.Request.UserAgent()
+	ip := c.ClientIP()
+
+	oauthResp, err := h.oauthService.VerifyOAuthTOTP(c.Request.Context(), req.TOTPToken, req.Code, userAgent, ip, req.TrustDevice)
 	if err != nil {
 		response.Error(c, err)
 		return

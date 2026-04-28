@@ -64,6 +64,7 @@
             totpToken: String("{{ .totp_token }}"),
             accessToken: String("{{ .access_token }}"),
             refreshToken: String("{{ .refresh_token }}"),
+            deviceToken: String("{{ .device_token }}"),
             expiresIn: Number("{{ .expires_in }}"),
             tokenType: String("{{ .token_type }}"),
             isNewUser: Boolean("{{ .is_new_user }}" === "true")
@@ -90,6 +91,14 @@
 
             localStorage.setItem('access_token', data.accessToken);
             localStorage.setItem('refresh_token', data.refreshToken);
+
+            // Store device token if provided (from 2FA verification)
+            if (data.deviceToken) {
+                localStorage.setItem('device_token', data.deviceToken);
+            }
+
+            // Clear the temporary device token used during OAuth
+            sessionStorage.removeItem('device_token_for_oauth');
 
             setTimeout(() => {
                 window.location.href = '/dashboard';

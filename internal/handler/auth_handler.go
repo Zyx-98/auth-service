@@ -57,7 +57,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	loginResp, err := h.authService.Login(c.Request.Context(), &req)
+	userAgent := c.Request.UserAgent()
+	ip := c.ClientIP()
+
+	loginResp, err := h.authService.Login(c.Request.Context(), &req, userAgent, ip)
 	if err != nil {
 		response.Error(c, err)
 		return
@@ -199,11 +202,57 @@ func (h *AuthHandler) VerifyTwoFA(c *gin.Context) {
 		return
 	}
 
-	tokenResp, err := h.authService.IssueTempTokens(c.Request.Context(), userID)
+	userAgent := c.Request.UserAgent()
+	ip := c.ClientIP()
+
+	loginResp, err := h.authService.IssueTempTokensWithTrust(c.Request.Context(), userID, userAgent, ip, req.TrustDevice)
 	if err != nil {
 		response.Error(c, err)
 		return
 	}
 
-	response.Ok(c, tokenResp)
+	response.Ok(c, loginResp)
+}
+
+func (h *AuthHandler) GetTrustedDevices(c *gin.Context) {
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		response.Error(c, apperror.Unauthorized("Missing user ID"))
+		return
+	}
+
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		response.Error(c, apperror.InternalServerError("Invalid user ID type", nil))
+		return
+	}
+
+	devices, err := h.authService.GetTrustedDevices(c.Request.Context(), userID)
+	if err != nil {
+		response.Error(c, apperror.InternalServerError("Failed to fetch trusted devices", err))
+		return
+	}
+
+	response.Ok(c, devices)
+}
+
+func (h *AuthHandler) DeleteTrustedDevices(c *gin.Context) {
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		response.Error(c, apperror.Unauthorized("Missing user ID"))
+		return
+	}
+
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		response.Error(c, apperror.InternalServerError("Invalid user ID type", nil))
+		return
+	}
+
+	if err := h.authService.RevokeTrustedDevices(c.Request.Context(), userID); err != nil {
+		response.Error(c, apperror.InternalServerError("Failed to revoke trusted devices", err))
+		return
+	}
+
+	response.NoContent(c)
 }

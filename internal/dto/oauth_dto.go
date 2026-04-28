@@ -13,9 +13,11 @@ type OAuthCallbackResponse struct {
 	IsNewUser    bool   `json:"is_new_user"`
 	TOTPRequired bool   `json:"totp_required"`
 	TOTPToken    string `json:"totp_token,omitempty"`
+	DeviceToken  string `json:"device_token,omitempty"`
 }
 
 type TOTPVerifyLoginRequest struct {
-	Code      string `json:"code" validate:"required"`
-	TOTPToken string `json:"totp_token" validate:"required"`
+	Code        string `json:"code" validate:"required"`
+	TOTPToken   string `json:"totp_token" validate:"required"`
+	TrustDevice bool   `json:"trust_device,omitempty"`
 }

@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,11 +16,12 @@ import (
 )
 
 type AuthService struct {
-	userRepo        repository.UserRepository
-	roleRepo        repository.RoleRepository
-	permissionRepo  repository.PermissionRepository
-	sessionRepo     repository.SessionRepository
-	jwtMaker        *jwt.Maker
+	userRepo              repository.UserRepository
+	roleRepo              repository.RoleRepository
+	permissionRepo        repository.PermissionRepository
+	sessionRepo           repository.SessionRepository
+	trustedDeviceRepo     repository.TrustedDeviceRepository
+	jwtMaker              *jwt.Maker
 }
 
 func NewAuthService(
@@ -26,14 +29,16 @@ func NewAuthService(
 	roleRepo repository.RoleRepository,
 	permissionRepo repository.PermissionRepository,
 	sessionRepo repository.SessionRepository,
+	trustedDeviceRepo repository.TrustedDeviceRepository,
 	jwtMaker *jwt.Maker,
 ) *AuthService {
 	return &AuthService{
-		userRepo:       userRepo,
-		roleRepo:       roleRepo,
-		permissionRepo: permissionRepo,
-		sessionRepo:    sessionRepo,
-		jwtMaker:       jwtMaker,
+		userRepo:          userRepo,
+		roleRepo:          roleRepo,
+		permissionRepo:    permissionRepo,
+		sessionRepo:       sessionRepo,
+		trustedDeviceRepo: trustedDeviceRepo,
+		jwtMaker:          jwtMaker,
 	}
 }
 
@@ -74,7 +79,7 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 	return s.IssueTokens(ctx, user)
 }
 
-func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.LoginResponse, error) {
+func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest, userAgent, ip string) (*dto.LoginResponse, error) {
 	user, err := s.userRepo.GetByEmail(ctx, req.Email)
 	if err != nil {
 		return nil, apperror.InternalServerError("Failed to fetch user", err)
@@ -89,6 +94,19 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Lo
 	}
 
 	if user.TOTPEnabled {
+		if req.DeviceToken != "" {
+			trusted, err := s.trustedDeviceRepo.Exists(ctx, user.ID, req.DeviceToken)
+			if err == nil && trusted {
+				tokenResp, err := s.IssueTokens(ctx, user)
+				if err != nil {
+					return nil, err
+				}
+				return &dto.LoginResponse{
+					Token: tokenResp,
+				}, nil
+			}
+		}
+
 		tempToken, err := s.createTempToken(ctx, user)
 		if err != nil {
 			return nil, err
@@ -275,4 +293,54 @@ func (s *AuthService) IssueTempTokens(ctx context.Context, userID uuid.UUID) (*d
 	}
 
 	return s.IssueTokens(ctx, user)
+}
+
+func (s *AuthService) IssueTempTokensWithTrust(ctx context.Context, userID uuid.UUID, userAgent, ip string, trustDevice bool) (*dto.LoginResponse, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, apperror.InternalServerError("Failed to fetch user", err)
+	}
+
+	if user == nil {
+		return nil, apperror.NotFound("User not found")
+	}
+
+	tokenResp, err := s.IssueTokens(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
+	loginResp := &dto.LoginResponse{
+		Token: tokenResp,
+	}
+
+	if trustDevice {
+		deviceToken := s.generateDeviceToken()
+		expiresAt := time.Now().Add(30 * 24 * time.Hour)
+		device := entity.NewTrustedDevice(userID, deviceToken, userAgent, ip, expiresAt)
+
+		if err := s.trustedDeviceRepo.Save(ctx, device); err != nil {
+			return nil, apperror.InternalServerError("Failed to save trusted device", err)
+		}
+
+		loginResp.DeviceToken = deviceToken
+	}
+
+	return loginResp, nil
+}
+
+func (s *AuthService) generateDeviceToken() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return uuid.New().String()
+	}
+	return hex.EncodeToString(b)
+}
+
+func (s *AuthService) GetTrustedDevices(ctx context.Context, userID uuid.UUID) ([]*entity.TrustedDevice, error) {
+	return s.trustedDeviceRepo.GetByUserID(ctx, userID)
+}
+
+func (s *AuthService) RevokeTrustedDevices(ctx context.Context, userID uuid.UUID) error {
+	return s.trustedDeviceRepo.DeleteByUserID(ctx, userID)
 }
