@@ -244,7 +244,9 @@ func (s *RBACService) AssignRoleToUser(ctx context.Context, userID, roleID uuid.
 		return nil, apperror.InternalServerError("Failed to assign role", err)
 	}
 
-	s.auditLogService.LogRBACEvent(ctx, userID, roleID, "assign", map[string]string{"role": role.Name}, nil, "success")
+	if err := s.auditLogService.LogRBACEvent(ctx, userID, roleID, "assign", map[string]string{"role": role.Name}, nil, "success"); err != nil {
+		return nil, apperror.InternalServerError("Failed to log audit event", err)
+	}
 
 	return &dto.AssignRoleResponse{
 		UserID: userID,
@@ -275,7 +277,9 @@ func (s *RBACService) RemoveRoleFromUser(ctx context.Context, userID, roleID uui
 		return apperror.InternalServerError("Failed to remove role", err)
 	}
 
-	s.auditLogService.LogRBACEvent(ctx, userID, roleID, "revoke", map[string]string{"role": role.Name}, nil, "success")
+	if err := s.auditLogService.LogRBACEvent(ctx, userID, roleID, "revoke", map[string]string{"role": role.Name}, nil, "success"); err != nil {
+		return apperror.InternalServerError("Failed to log audit event", err)
+	}
 
 	return nil
 }

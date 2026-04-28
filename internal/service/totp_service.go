@@ -11,9 +11,9 @@ import (
 )
 
 type TOTPService struct {
-	totpManager         *totppkg.TOTPManager
-	userRepo            repository.UserRepository
-	auditLogService     *AuditLogService
+	totpManager     *totppkg.TOTPManager
+	userRepo        repository.UserRepository
+	auditLogService *AuditLogService
 }
 
 func NewTOTPService(totpManager *totppkg.TOTPManager, userRepo repository.UserRepository, auditLogService *AuditLogService) *TOTPService {
@@ -51,7 +51,9 @@ func (s *TOTPService) Setup(ctx context.Context, userID uuid.UUID) (*dto.TOTPSet
 		return nil, apperror.InternalServerError("Failed to save TOTP secret", err)
 	}
 
-	s.auditLogService.LogAuthEvent(ctx, &userID, "2fa.setup", "create", "success", nil)
+	if err := s.auditLogService.LogAuthEvent(ctx, &userID, "2fa.setup", "create", "success", nil); err != nil {
+		return nil, apperror.InternalServerError("Failed to log audit event", err)
+	}
 
 	return &dto.TOTPSetupResponse{
 		Secret:   secretInfo.Secret,
@@ -81,7 +83,9 @@ func (s *TOTPService) Verify(ctx context.Context, userID uuid.UUID, code string)
 	}
 
 	if !valid {
-		s.auditLogService.LogAuthEvent(ctx, &userID, "2fa.verify", "verify", "failure", nil)
+		if err := s.auditLogService.LogAuthEvent(ctx, &userID, "2fa.verify", "verify", "failure", nil); err != nil {
+			return nil, apperror.InternalServerError("Failed to log audit event", err)
+		}
 		return &dto.TOTPVerifyResponse{Verified: false}, nil
 	}
 
@@ -90,7 +94,9 @@ func (s *TOTPService) Verify(ctx context.Context, userID uuid.UUID, code string)
 		return nil, apperror.InternalServerError("Failed to enable 2FA", err)
 	}
 
-	s.auditLogService.LogAuthEvent(ctx, &userID, "2fa.verify", "verify", "success", nil)
+	if err := s.auditLogService.LogAuthEvent(ctx, &userID, "2fa.verify", "verify", "success", nil); err != nil {
+		return nil, apperror.InternalServerError("Failed to log audit event", err)
+	}
 
 	return &dto.TOTPVerifyResponse{Verified: true}, nil
 }
@@ -164,7 +170,9 @@ func (s *TOTPService) Disable(ctx context.Context, userID uuid.UUID, code string
 	}
 
 	if !valid {
-		s.auditLogService.LogAuthEvent(ctx, &userID, "2fa.disable", "delete", "failure", nil)
+		if err := s.auditLogService.LogAuthEvent(ctx, &userID, "2fa.disable", "delete", "failure", nil); err != nil {
+			return nil, apperror.InternalServerError("Failed to log audit event", err)
+		}
 		return &dto.TOTPDisableResponse{Disabled: false}, nil
 	}
 
@@ -175,7 +183,9 @@ func (s *TOTPService) Disable(ctx context.Context, userID uuid.UUID, code string
 		return nil, apperror.InternalServerError("Failed to disable 2FA", err)
 	}
 
-	s.auditLogService.LogAuthEvent(ctx, &userID, "2fa.disable", "delete", "success", nil)
+	if err := s.auditLogService.LogAuthEvent(ctx, &userID, "2fa.disable", "delete", "success", nil); err != nil {
+		return nil, apperror.InternalServerError("Failed to log audit event", err)
+	}
 
 	return &dto.TOTPDisableResponse{Disabled: true}, nil
 }
