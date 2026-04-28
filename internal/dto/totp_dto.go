@@ -11,7 +11,8 @@ type TOTPSetupResponse struct {
 }
 
 type TOTPVerifyRequest struct {
-	Code string `json:"code" validate:"required,len=6"`
+	Code        string `json:"code" validate:"required,len=6"`
+	TrustDevice bool   `json:"trust_device,omitempty"`
 }
 
 type TOTPVerifyResponse struct {

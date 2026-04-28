@@ -208,6 +208,43 @@ func (m *mockPermissionRepo) GetByUserID(ctx context.Context, userID uuid.UUID) 
 	return make([]*entity.Permission, 0), nil
 }
 
+type mockTrustedDeviceRepo struct {
+	devices map[string]*entity.TrustedDevice
+}
+
+func (m *mockTrustedDeviceRepo) Save(ctx context.Context, device *entity.TrustedDevice) error {
+	key := device.UserID.String() + ":" + device.Token
+	m.devices[key] = device
+	return nil
+}
+
+func (m *mockTrustedDeviceRepo) Exists(ctx context.Context, userID uuid.UUID, token string) (bool, error) {
+	key := userID.String() + ":" + token
+	_, exists := m.devices[key]
+	return exists, nil
+}
+
+func (m *mockTrustedDeviceRepo) GetByUserID(ctx context.Context, userID uuid.UUID) ([]*entity.TrustedDevice, error) {
+	prefix := userID.String() + ":"
+	devices := make([]*entity.TrustedDevice, 0)
+	for k, d := range m.devices {
+		if len(k) > len(prefix) && k[:len(prefix)] == prefix {
+			devices = append(devices, d)
+		}
+	}
+	return devices, nil
+}
+
+func (m *mockTrustedDeviceRepo) DeleteByUserID(ctx context.Context, userID uuid.UUID) error {
+	prefix := userID.String() + ":"
+	for k := range m.devices {
+		if len(k) > len(prefix) && k[:len(prefix)] == prefix {
+			delete(m.devices, k)
+		}
+	}
+	return nil
+}
+
 func setupAuthHandler(t *testing.T) (*AuthHandler, *gin.Engine) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -216,6 +253,7 @@ func setupAuthHandler(t *testing.T) (*AuthHandler, *gin.Engine) {
 	roleRepo := &mockRoleRepo{roles: make(map[uuid.UUID]*entity.Role)}
 	permissionRepo := &mockPermissionRepo{permissions: make(map[uuid.UUID]*entity.Permission)}
 	sessionRepo := &mockSessionRepo{sessions: make(map[string]*entity.Session)}
+	trustedDeviceRepo := &mockTrustedDeviceRepo{devices: make(map[string]*entity.TrustedDevice)}
 
 	jwtMaker := jwt.NewMaker(
 		"access-secret-key-32-chars-long",
@@ -227,7 +265,7 @@ func setupAuthHandler(t *testing.T) (*AuthHandler, *gin.Engine) {
 	totpManager, err := totp.NewTOTPManager("AuthService", "e90cfcd097d9116bc1a66a7ad81851db25b8556769c2ae3fa46e05fef7875edf")
 	require.NoError(t, err)
 
-	authSvc := service.NewAuthService(userRepo, roleRepo, permissionRepo, sessionRepo, jwtMaker)
+	authSvc := service.NewAuthService(userRepo, roleRepo, permissionRepo, sessionRepo, trustedDeviceRepo, jwtMaker)
 	totpSvc := service.NewTOTPService(totpManager, userRepo)
 
 	handler := NewAuthHandler(authSvc, totpSvc)

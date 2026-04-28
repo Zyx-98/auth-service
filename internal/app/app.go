@@ -2,12 +2,14 @@ package app
 
 import (
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hatuan/auth-service/config"
 	"github.com/hatuan/auth-service/internal/domain/repository"
 	"github.com/hatuan/auth-service/internal/handler"
 	"github.com/hatuan/auth-service/internal/middleware"
+	redisrepo "github.com/hatuan/auth-service/internal/repository/redis"
 	"github.com/hatuan/auth-service/internal/service"
 	"github.com/hatuan/auth-service/pkg/jwt"
 	"github.com/hatuan/auth-service/pkg/oauth"
@@ -52,7 +54,8 @@ func (a *App) Setup(
 		a.cfg.JWT.RefreshExpiry,
 	)
 
-	authService := service.NewAuthService(userRepo, roleRepo, permissionRepo, sessionRepo, jwtMaker)
+	trustedDeviceRepo := redisrepo.NewTrustedDeviceRepository(a.redisClient, 30*24*time.Hour)
+	authService := service.NewAuthService(userRepo, roleRepo, permissionRepo, sessionRepo, trustedDeviceRepo, jwtMaker)
 
 	totpManager, err := totppkg.NewTOTPManager(a.cfg.TOTP.Issuer, a.cfg.TOTP.EncryptionKey)
 	if err != nil {
@@ -67,7 +70,7 @@ func (a *App) Setup(
 		a.cfg.OAuth.GoogleClientSecret,
 		a.cfg.OAuth.GoogleRedirectURL,
 	)
-	oauthService := service.NewOAuthService(googleOAuthClient, userRepo, roleRepo, permissionRepo, sessionRepo, totpService, jwtMaker)
+	oauthService := service.NewOAuthService(googleOAuthClient, userRepo, roleRepo, permissionRepo, sessionRepo, trustedDeviceRepo, totpService, jwtMaker)
 	oauthHandler := handler.NewOAuthHandler(oauthService, a.redisClient, a.logger)
 
 	totpHandler := handler.NewTOTPHandler(totpService)
@@ -96,11 +99,10 @@ func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handle
 		loginLimited := public.Group("")
 		loginLimited.Use(middleware.RateLimitMiddleware(a.redisClient, a.cfg.RateLimit.LoginLimit))
 		loginLimited.POST("/login", authHandler.Login)
-		loginLimited.POST("/2fa/verify-login", authHandler.VerifyTwoFA)
 
 		public.POST("/refresh", authHandler.Refresh)
 		public.POST("/introspect", authHandler.Introspect)
-		public.GET("/login/google", oauthHandler.GoogleLoginRedirect)
+		public.POST("/login/google", oauthHandler.GoogleLoginRedirect)
 		public.GET("/callback/google", oauthHandler.GoogleCallback)
 		public.POST("/verify-oauth-totp", oauthHandler.VerifyOAuthTOTP)
 	}
@@ -115,7 +117,10 @@ func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handle
 		protected.POST("/2fa/setup", totpHandler.Setup)
 		protected.GET("/2fa/qrcode", totpHandler.GetQRCode)
 		protected.POST("/2fa/verify", totpHandler.Verify)
+		protected.POST("/2fa/verify-login", authHandler.VerifyTwoFA)
 		protected.POST("/2fa/disable", totpHandler.Disable)
+		protected.GET("/trusted-devices", authHandler.GetTrustedDevices)
+		protected.DELETE("/trusted-devices", authHandler.DeleteTrustedDevices)
 	}
 
 	// RBAC Routes (Admin only)
