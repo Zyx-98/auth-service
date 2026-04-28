@@ -43,6 +43,7 @@ func (a *App) Setup(
 	roleRepo repository.RoleRepository,
 	permissionRepo repository.PermissionRepository,
 	sessionRepo repository.SessionRepository,
+	auditLogRepo repository.AuditLogRepository,
 ) {
 	// Load templates for OAuth callback
 	a.router.LoadHTMLGlob("templates/*.html")
@@ -55,13 +56,16 @@ func (a *App) Setup(
 	)
 
 	trustedDeviceRepo := redisrepo.NewTrustedDeviceRepository(a.redisClient, 30*24*time.Hour)
-	authService := service.NewAuthService(userRepo, roleRepo, permissionRepo, sessionRepo, trustedDeviceRepo, jwtMaker)
+
+	auditLogService := service.NewAuditLogService(auditLogRepo)
+
+	authService := service.NewAuthService(userRepo, roleRepo, permissionRepo, sessionRepo, trustedDeviceRepo, jwtMaker, auditLogService)
 
 	totpManager, err := totppkg.NewTOTPManager(a.cfg.TOTP.Issuer, a.cfg.TOTP.EncryptionKey)
 	if err != nil {
 		a.logger.Fatal("Failed to initialize TOTP manager", zap.Error(err))
 	}
-	totpService := service.NewTOTPService(totpManager, userRepo)
+	totpService := service.NewTOTPService(totpManager, userRepo, auditLogService)
 
 	authHandler := handler.NewAuthHandler(authService, totpService)
 
@@ -75,14 +79,16 @@ func (a *App) Setup(
 
 	totpHandler := handler.NewTOTPHandler(totpService)
 
-	rbacService := service.NewRBACService(roleRepo, permissionRepo, userRepo)
+	auditLogHandler := handler.NewAuditLogHandler(auditLogService)
+
+	rbacService := service.NewRBACService(roleRepo, permissionRepo, userRepo, auditLogService)
 	rbacHandler := handler.NewRBACHandler(rbacService)
 
-	a.setupRoutes(authHandler, oauthHandler, totpHandler, rbacHandler, jwtMaker)
+	a.setupRoutes(authHandler, oauthHandler, totpHandler, rbacHandler, auditLogHandler, jwtMaker)
 	a.setupStaticFiles()
 }
 
-func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handler.OAuthHandler, totpHandler *handler.TOTPHandler, rbacHandler *handler.RBACHandler, jwtMaker *jwt.Maker) {
+func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handler.OAuthHandler, totpHandler *handler.TOTPHandler, rbacHandler *handler.RBACHandler, auditLogHandler *handler.AuditLogHandler, jwtMaker *jwt.Maker) {
 	// Global middlewares
 	a.router.Use(middleware.CORSMiddleware(a.cfg.CORS.AllowedOrigins))
 	a.router.Use(middleware.SecurityHeadersMiddleware())
@@ -121,6 +127,7 @@ func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handle
 		protected.POST("/2fa/disable", totpHandler.Disable)
 		protected.GET("/trusted-devices", authHandler.GetTrustedDevices)
 		protected.DELETE("/trusted-devices", authHandler.DeleteTrustedDevices)
+		protected.GET("/me/audit-logs", auditLogHandler.GetMyAuditLogs)
 	}
 
 	// RBAC Routes (Admin only)
@@ -144,6 +151,9 @@ func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handle
 		admin.POST("/users/:user_id/roles", rbacHandler.AssignRoleToUser)
 		admin.DELETE("/users/:user_id/roles/:role_id", rbacHandler.RemoveRoleFromUser)
 		admin.GET("/users/:user_id/roles", rbacHandler.GetUserRoles)
+
+		// Audit Logs
+		admin.GET("/audit-logs", auditLogHandler.GetAuditLogs)
 	}
 }
 

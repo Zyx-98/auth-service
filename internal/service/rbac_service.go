@@ -11,20 +11,23 @@ import (
 )
 
 type RBACService struct {
-	roleRepo       repository.RoleRepository
-	permissionRepo repository.PermissionRepository
-	userRepo       repository.UserRepository
+	roleRepo        repository.RoleRepository
+	permissionRepo  repository.PermissionRepository
+	userRepo        repository.UserRepository
+	auditLogService *AuditLogService
 }
 
 func NewRBACService(
 	roleRepo repository.RoleRepository,
 	permissionRepo repository.PermissionRepository,
 	userRepo repository.UserRepository,
+	auditLogService *AuditLogService,
 ) *RBACService {
 	return &RBACService{
-		roleRepo:       roleRepo,
-		permissionRepo: permissionRepo,
-		userRepo:       userRepo,
+		roleRepo:        roleRepo,
+		permissionRepo:  permissionRepo,
+		userRepo:        userRepo,
+		auditLogService: auditLogService,
 	}
 }
 
@@ -241,6 +244,8 @@ func (s *RBACService) AssignRoleToUser(ctx context.Context, userID, roleID uuid.
 		return nil, apperror.InternalServerError("Failed to assign role", err)
 	}
 
+	s.auditLogService.LogRBACEvent(ctx, userID, roleID, "assign", map[string]string{"role": role.Name}, nil, "success")
+
 	return &dto.AssignRoleResponse{
 		UserID: userID,
 		RoleID: roleID,
@@ -269,6 +274,8 @@ func (s *RBACService) RemoveRoleFromUser(ctx context.Context, userID, roleID uui
 	if err := s.roleRepo.RemoveRoleFromUser(ctx, userID, roleID); err != nil {
 		return apperror.InternalServerError("Failed to remove role", err)
 	}
+
+	s.auditLogService.LogRBACEvent(ctx, userID, roleID, "revoke", map[string]string{"role": role.Name}, nil, "success")
 
 	return nil
 }
