@@ -113,7 +113,7 @@ func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handle
 		public.POST("/verify-oauth-totp", oauthHandler.VerifyOAuthTOTP)
 	}
 
-	// Protected auth routes
+	// Protected auth routes (requires full access token)
 	protected := a.router.Group("/auth")
 	protected.Use(middleware.AuthMiddleware(jwtMaker))
 	{
@@ -123,11 +123,17 @@ func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handle
 		protected.POST("/2fa/setup", totpHandler.Setup)
 		protected.GET("/2fa/qrcode", totpHandler.GetQRCode)
 		protected.POST("/2fa/verify", totpHandler.Verify)
-		protected.POST("/2fa/verify-login", authHandler.VerifyTwoFA)
 		protected.POST("/2fa/disable", totpHandler.Disable)
 		protected.GET("/trusted-devices", authHandler.GetTrustedDevices)
 		protected.DELETE("/trusted-devices", authHandler.DeleteTrustedDevices)
 		protected.GET("/me/audit-logs", auditLogHandler.GetMyAuditLogs)
+	}
+
+	// 2FA login verification route (allows temporary tokens)
+	twoFA := a.router.Group("/auth")
+	twoFA.Use(middleware.TwoFAMiddleware(jwtMaker))
+	{
+		twoFA.POST("/2fa/verify-login", authHandler.VerifyTwoFA)
 	}
 
 	// RBAC Routes (Admin only)
