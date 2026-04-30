@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/hatuan/auth-service/internal/domain/entity"
+	"github.com/hatuan/auth-service/internal/domain/repository"
 	"github.com/hatuan/auth-service/internal/service"
 	"github.com/hatuan/auth-service/pkg/jwt"
 	"github.com/hatuan/auth-service/pkg/totp"
@@ -245,6 +246,20 @@ func (m *mockTrustedDeviceRepo) DeleteByUserID(ctx context.Context, userID uuid.
 	return nil
 }
 
+type mockAuditLogRepo struct{}
+
+func (m *mockAuditLogRepo) Create(ctx context.Context, log *entity.AuditLog) error {
+	return nil
+}
+
+func (m *mockAuditLogRepo) ListByActorID(ctx context.Context, actorID uuid.UUID, limit, offset int) ([]*entity.AuditLog, error) {
+	return make([]*entity.AuditLog, 0), nil
+}
+
+func (m *mockAuditLogRepo) List(ctx context.Context, filters repository.AuditLogFilters, limit, offset int) ([]*entity.AuditLog, error) {
+	return make([]*entity.AuditLog, 0), nil
+}
+
 func setupAuthHandler(t *testing.T) (*AuthHandler, *gin.Engine) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -265,8 +280,11 @@ func setupAuthHandler(t *testing.T) (*AuthHandler, *gin.Engine) {
 	totpManager, err := totp.NewTOTPManager("AuthService", "e90cfcd097d9116bc1a66a7ad81851db25b8556769c2ae3fa46e05fef7875edf")
 	require.NoError(t, err)
 
-	authSvc := service.NewAuthService(userRepo, roleRepo, permissionRepo, sessionRepo, trustedDeviceRepo, jwtMaker)
-	totpSvc := service.NewTOTPService(totpManager, userRepo)
+	auditLogRepo := &mockAuditLogRepo{}
+	auditLogSvc := service.NewAuditLogService(auditLogRepo)
+
+	authSvc := service.NewAuthService(userRepo, roleRepo, permissionRepo, sessionRepo, trustedDeviceRepo, jwtMaker, auditLogSvc)
+	totpSvc := service.NewTOTPService(totpManager, userRepo, auditLogSvc)
 
 	handler := NewAuthHandler(authSvc, totpSvc)
 
