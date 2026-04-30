@@ -16,12 +16,13 @@ import (
 )
 
 type AuthService struct {
-	userRepo              repository.UserRepository
-	roleRepo              repository.RoleRepository
-	permissionRepo        repository.PermissionRepository
-	sessionRepo           repository.SessionRepository
-	trustedDeviceRepo     repository.TrustedDeviceRepository
-	jwtMaker              *jwt.Maker
+	userRepo          repository.UserRepository
+	roleRepo          repository.RoleRepository
+	permissionRepo    repository.PermissionRepository
+	sessionRepo       repository.SessionRepository
+	trustedDeviceRepo repository.TrustedDeviceRepository
+	jwtMaker          *jwt.Maker
+	auditLogService   *AuditLogService
 }
 
 func NewAuthService(
@@ -31,6 +32,7 @@ func NewAuthService(
 	sessionRepo repository.SessionRepository,
 	trustedDeviceRepo repository.TrustedDeviceRepository,
 	jwtMaker *jwt.Maker,
+	auditLogService *AuditLogService,
 ) *AuthService {
 	return &AuthService{
 		userRepo:          userRepo,
@@ -39,6 +41,7 @@ func NewAuthService(
 		sessionRepo:       sessionRepo,
 		trustedDeviceRepo: trustedDeviceRepo,
 		jwtMaker:          jwtMaker,
+		auditLogService:   auditLogService,
 	}
 }
 
@@ -76,6 +79,10 @@ func (s *AuthService) Register(ctx context.Context, req *dto.RegisterRequest) (*
 		}
 	}
 
+	if err := s.auditLogService.LogAuthEvent(ctx, &user.ID, "user.register", "create", "success", nil); err != nil {
+		return nil, apperror.InternalServerError("Failed to log audit event", err)
+	}
+
 	return s.IssueTokens(ctx, user)
 }
 
@@ -101,6 +108,13 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest, userAgen
 				if err != nil {
 					return nil, err
 				}
+				if err = s.auditLogService.LogAuthEvent(ctx, &user.ID, "user.login", "authenticate", "success", map[string]any{
+					"ip":           ip,
+					"user_agent":   userAgent,
+					"device_token": true,
+				}); err != nil {
+					return nil, apperror.InternalServerError("Failed to log audit event", err)
+				}
 				return &dto.LoginResponse{
 					Token: tokenResp,
 				}, nil
@@ -111,6 +125,13 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest, userAgen
 		if err != nil {
 			return nil, err
 		}
+		if err = s.auditLogService.LogAuthEvent(ctx, &user.ID, "user.login", "authenticate", "success", map[string]any{
+			"ip":           ip,
+			"user_agent":   userAgent,
+			"requires_2fa": true,
+		}); err != nil {
+			return nil, apperror.InternalServerError("Failed to log audit event", err)
+		}
 		return &dto.LoginResponse{
 			RequiresTwoFA: true,
 			TempToken:     tempToken,
@@ -120,6 +141,13 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest, userAgen
 	tokenResp, err := s.IssueTokens(ctx, user)
 	if err != nil {
 		return nil, err
+	}
+
+	if err = s.auditLogService.LogAuthEvent(ctx, &user.ID, "user.login", "authenticate", "success", map[string]any{
+		"ip":         ip,
+		"user_agent": userAgent,
+	}); err != nil {
+		return nil, apperror.InternalServerError("Failed to log audit event", err)
 	}
 
 	return &dto.LoginResponse{
@@ -155,11 +183,20 @@ func (s *AuthService) Refresh(ctx context.Context, req *dto.RefreshTokenRequest)
 		return nil, apperror.InternalServerError("Failed to revoke old token", err)
 	}
 
-	return s.IssueTokens(ctx, user)
+	tokenResp, err := s.IssueTokens(ctx, user)
+	if err == nil {
+		if err := s.auditLogService.LogAuthEvent(ctx, &user.ID, "token.refresh", "refresh", "success", nil); err != nil {
+			return nil, apperror.InternalServerError("Failed to log audit event", err)
+		}
+	}
+	return tokenResp, err
 }
 
 func (s *AuthService) Logout(ctx context.Context, jti string) error {
-	return s.sessionRepo.DeleteByJTI(ctx, jti)
+	if err := s.sessionRepo.DeleteByJTI(ctx, jti); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *AuthService) LogoutAllDevices(ctx context.Context, userID uuid.UUID) error {

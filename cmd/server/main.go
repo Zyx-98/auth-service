@@ -111,9 +111,10 @@ func main() {
 	roleRepo := postgresrepo.NewRoleRepository(db)
 	permissionRepo := postgresrepo.NewPermissionRepository(db)
 	sessionRepo := redisrepo.NewSessionRepository(redisClient, cfg.JWT.RefreshExpiry)
+	auditLogRepo := postgresrepo.NewAuditLogRepository(db)
 
 	authApp := app.NewApp(router, db, cfg, redisClient, logger)
-	authApp.Setup(userRepo, roleRepo, permissionRepo, sessionRepo)
+	authApp.Setup(userRepo, roleRepo, permissionRepo, sessionRepo, auditLogRepo)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
