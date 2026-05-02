@@ -291,8 +291,11 @@ Test coverage:
 
 ## License
 
-MIT
+MIT License — See [LICENSE](./LICENSE) file for details.
 
 ## Support
 
-For issues, open a GitHub issue or email support@example.com.
+For issues, questions, or feedback:
+
+- Open a GitHub issue for bug reports and feature requests
+- Email: [hatuanzzz85@gmail.com](mailto:hatuanzzz85@gmail.com)
