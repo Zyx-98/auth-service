@@ -101,24 +101,21 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest, userAgen
 	}
 
 	if user.TOTPEnabled {
-		if req.DeviceToken != "" {
-			trusted, err := s.trustedDeviceRepo.Exists(ctx, user.ID, req.DeviceToken)
-			if err == nil && trusted {
-				tokenResp, err := s.IssueTokens(ctx, user)
-				if err != nil {
-					return nil, err
-				}
-				if err = s.auditLogService.LogAuthEvent(ctx, &user.ID, "user.login", "authenticate", "success", map[string]any{
-					"ip":           ip,
-					"user_agent":   userAgent,
-					"device_token": true,
-				}); err != nil {
-					return nil, apperror.InternalServerError("Failed to log audit event", err)
-				}
-				return &dto.LoginResponse{
-					Token: tokenResp,
-				}, nil
+		if s.isTrustedDevice(ctx, user.ID, req.DeviceToken, userAgent, ip) {
+			tokenResp, err := s.IssueTokens(ctx, user)
+			if err != nil {
+				return nil, err
 			}
+			if err = s.auditLogService.LogAuthEvent(ctx, &user.ID, "user.login", "authenticate", "success", map[string]any{
+				"ip":             ip,
+				"user_agent":     userAgent,
+				"trusted_device": true,
+			}); err != nil {
+				return nil, apperror.InternalServerError("Failed to log audit event", err)
+			}
+			return &dto.LoginResponse{
+				Token: tokenResp,
+			}, nil
 		}
 
 		tempToken, err := s.createTempToken(ctx, user)
@@ -153,6 +150,18 @@ func (s *AuthService) Login(ctx context.Context, req *dto.LoginRequest, userAgen
 	return &dto.LoginResponse{
 		Token: tokenResp,
 	}, nil
+}
+
+func (s *AuthService) isTrustedDevice(ctx context.Context, userID uuid.UUID, deviceToken, userAgent, ip string) bool {
+	if deviceToken != "" {
+		trusted, err := s.trustedDeviceRepo.Exists(ctx, userID, deviceToken)
+		if err == nil && trusted {
+			return true
+		}
+	}
+
+	trusted, err := s.trustedDeviceRepo.IsTrustedByUserAgentAndIP(ctx, userID, userAgent, ip)
+	return err == nil && trusted
 }
 
 func (s *AuthService) Refresh(ctx context.Context, req *dto.RefreshTokenRequest) (*dto.TokenResponse, error) {

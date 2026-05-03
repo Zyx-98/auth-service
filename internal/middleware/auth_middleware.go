@@ -12,20 +12,26 @@ import (
 func AuthMiddleware(jwtMaker *jwt.Maker) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			response.Error(c, apperror.Unauthorized("Missing authorization header"))
+		token := ""
+
+		if authHeader != "" {
+			parts := strings.Split(authHeader, " ")
+			if len(parts) == 2 && parts[0] == "Bearer" {
+				token = parts[1]
+			}
+		}
+
+		if token == "" {
+			if cookieToken, err := c.Cookie("access_token"); err == nil && cookieToken != "" {
+				token = cookieToken
+			}
+		}
+
+		if token == "" {
+			response.Error(c, apperror.Unauthorized("Missing authorization header or cookie"))
 			c.Abort()
 			return
 		}
-
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			response.Error(c, apperror.Unauthorized("Invalid authorization header format"))
-			c.Abort()
-			return
-		}
-
-		token := parts[1]
 		claims, err := jwtMaker.VerifyAccessToken(token)
 		if err != nil {
 			response.Error(c, apperror.Unauthorized("Invalid or expired token"))
@@ -53,20 +59,26 @@ func AuthMiddleware(jwtMaker *jwt.Maker) gin.HandlerFunc {
 func TwoFAMiddleware(jwtMaker *jwt.Maker) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			response.Error(c, apperror.Unauthorized("Missing authorization header"))
+		token := ""
+
+		if authHeader != "" {
+			parts := strings.Split(authHeader, " ")
+			if len(parts) == 2 && parts[0] == "Bearer" {
+				token = parts[1]
+			}
+		}
+
+		if token == "" {
+			if cookieToken, err := c.Cookie("access_token"); err == nil && cookieToken != "" {
+				token = cookieToken
+			}
+		}
+
+		if token == "" {
+			response.Error(c, apperror.Unauthorized("Missing authorization header or cookie"))
 			c.Abort()
 			return
 		}
-
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			response.Error(c, apperror.Unauthorized("Invalid authorization header format"))
-			c.Abort()
-			return
-		}
-
-		token := parts[1]
 		claims, err := jwtMaker.VerifyAccessToken(token)
 		if err != nil {
 			response.Error(c, apperror.Unauthorized("Invalid or expired token"))
@@ -107,18 +119,25 @@ func hasPermission(permissions []string, required string) bool {
 func OptionalAuthMiddleware(jwtMaker *jwt.Maker) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
+		token := ""
+
+		if authHeader != "" {
+			parts := strings.Split(authHeader, " ")
+			if len(parts) == 2 && parts[0] == "Bearer" {
+				token = parts[1]
+			}
+		}
+
+		if token == "" {
+			if cookieToken, err := c.Cookie("access_token"); err == nil && cookieToken != "" {
+				token = cookieToken
+			}
+		}
+
+		if token == "" {
 			c.Next()
 			return
 		}
-
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.Next()
-			return
-		}
-
-		token := parts[1]
 		claims, err := jwtMaker.VerifyAccessToken(token)
 		if err != nil {
 			c.Next()

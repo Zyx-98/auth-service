@@ -5,35 +5,48 @@ import RegisterPage from '../pages/RegisterPage.vue'
 import TwoFAPage from '../pages/TwoFAPage.vue'
 import OAuthTwoFAPage from '../pages/OAuthTwoFAPage.vue'
 import DashboardPage from '../pages/DashboardPage.vue'
+import { authApi } from '../api/auth'
+
+const isAuthenticated = async (): Promise<boolean> => {
+  try {
+    await authApi.getProfile({
+      skipAuthRefresh: true,
+      skipAuthRedirect: true,
+    })
+    return true
+  } catch {
+    return false
+  }
+}
 
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
-    redirect: '/login',
+    redirect: '/dashboard',
   },
   {
     path: '/login',
     name: 'Login',
     component: LoginPage,
-    meta: { requiresAuth: false },
+    meta: { guestOnly: true },
   },
   {
     path: '/register',
     name: 'Register',
     component: RegisterPage,
-    meta: { requiresAuth: false },
+    meta: { guestOnly: true },
   },
   {
     path: '/2fa',
     name: 'TwoFA',
     component: TwoFAPage,
-    meta: { requiresAuth: false },
+    meta: { guestOnly: true, requiresTempToken: true },
   },
   {
     path: '/2fa-verify',
     name: 'OAuthTwoFA',
     component: OAuthTwoFAPage,
-    meta: { requiresAuth: false },
+    meta: { guestOnly: true, requiresOAuthTOTPToken: true },
   },
   {
     path: '/dashboard',
@@ -48,15 +61,26 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach((to, _from, next) => {
-  const isAuthenticated = !!localStorage.getItem('access_token')
+router.beforeEach(async (to) => {
+  const loggedIn = await isAuthenticated()
 
-  if (to.meta.requiresAuth && !isAuthenticated) {
-    next('/login')
-  } else if (!to.meta.requiresAuth && isAuthenticated && (to.path === '/login' || to.path === '/register')) {
-    next('/dashboard')
-  } else {
-    next()
+  if (to.meta.requiresAuth && !loggedIn) {
+    return {
+      path: '/login',
+      query: { redirect: to.fullPath },
+    }
+  }
+
+  if (to.meta.guestOnly && loggedIn) {
+    return '/dashboard'
+  }
+
+  if (to.meta.requiresTempToken && !sessionStorage.getItem('temp_token')) {
+    return '/login'
+  }
+
+  if (to.meta.requiresOAuthTOTPToken && !sessionStorage.getItem('totp_token')) {
+    return '/login'
   }
 })
 

@@ -246,6 +246,15 @@ func (m *mockTrustedDeviceRepo) DeleteByUserID(ctx context.Context, userID uuid.
 	return nil
 }
 
+func (m *mockTrustedDeviceRepo) IsTrustedByUserAgentAndIP(ctx context.Context, userID uuid.UUID, userAgent, ipAddress string) (bool, error) {
+	for _, device := range m.devices {
+		if device.UserID == userID && device.UserAgent == userAgent && device.IPAddress == ipAddress && device.ExpiresAt.After(time.Now()) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 type mockAuditLogRepo struct{}
 
 func (m *mockAuditLogRepo) Create(ctx context.Context, log *entity.AuditLog) error {

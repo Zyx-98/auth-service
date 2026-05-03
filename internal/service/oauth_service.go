@@ -16,14 +16,14 @@ import (
 )
 
 type OAuthService struct {
-	googleClient        *oauth.GoogleOAuthClient
-	userRepo            repository.UserRepository
-	roleRepo            repository.RoleRepository
-	permissionRepo      repository.PermissionRepository
-	sessionRepo         repository.SessionRepository
-	trustedDeviceRepo   repository.TrustedDeviceRepository
-	totpService         *TOTPService
-	jwtMaker            *jwtpkg.Maker
+	googleClient      *oauth.GoogleOAuthClient
+	userRepo          repository.UserRepository
+	roleRepo          repository.RoleRepository
+	permissionRepo    repository.PermissionRepository
+	sessionRepo       repository.SessionRepository
+	trustedDeviceRepo repository.TrustedDeviceRepository
+	totpService       *TOTPService
+	jwtMaker          *jwtpkg.Maker
 }
 
 func NewOAuthService(
@@ -205,13 +205,8 @@ func (s *OAuthService) refreshUserRoles(ctx context.Context, user *entity.User) 
 
 func (s *OAuthService) buildOAuthResponse(ctx context.Context, user *entity.User, isNewUser bool, deviceToken string, userAgent string, ip string) (*dto.OAuthCallbackResponse, error) {
 	if user.TOTPEnabled {
-		// Check if this device is already trusted
-		if deviceToken != "" {
-			trusted, err := s.trustedDeviceRepo.Exists(ctx, user.ID, deviceToken)
-			if err == nil && trusted {
-				// Device is trusted, skip 2FA
-				return s.buildFullOAuthResponse(ctx, user, userAgent, ip, false)
-			}
+		if s.isTrustedDevice(ctx, user.ID, deviceToken, userAgent, ip) {
+			return s.buildFullOAuthResponse(ctx, user, userAgent, ip, false)
 		}
 
 		totpToken, err := s.jwtMaker.CreateCustomToken(user.ID, user.Email, []string{"totp:verify"}, 10*time.Minute, "")
@@ -266,6 +261,18 @@ func (s *OAuthService) buildOAuthResponse(ctx context.Context, user *entity.User
 		IsNewUser:    isNewUser,
 		TOTPRequired: false,
 	}, nil
+}
+
+func (s *OAuthService) isTrustedDevice(ctx context.Context, userID uuid.UUID, deviceToken, userAgent, ip string) bool {
+	if deviceToken != "" {
+		trusted, err := s.trustedDeviceRepo.Exists(ctx, userID, deviceToken)
+		if err == nil && trusted {
+			return true
+		}
+	}
+
+	trusted, err := s.trustedDeviceRepo.IsTrustedByUserAgentAndIP(ctx, userID, userAgent, ip)
+	return err == nil && trusted
 }
 
 func (s *OAuthService) generateDeviceToken() string {

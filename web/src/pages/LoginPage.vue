@@ -71,18 +71,18 @@ const handleLogin = async () => {
   loading.value = true
 
   try {
-    const deviceToken = localStorage.getItem('device_token') || undefined
-    const response = await authApi.login(form.value.email, form.value.password, deviceToken)
+    const response = await authApi.login(form.value.email, form.value.password)
     const { data } = response.data
 
     if (data.requires_2fa) {
-      localStorage.setItem('temp_token', data.temp_token)
-      localStorage.setItem('user_email', form.value.email)
+      sessionStorage.setItem('temp_token', data.temp_token)
+      sessionStorage.setItem('user_email', form.value.email)
       router.push('/2fa')
     } else if (data.token) {
-      localStorage.setItem('access_token', data.token.access_token)
-      localStorage.setItem('refresh_token', data.token.refresh_token)
-      router.push('/dashboard')
+      // Wait for cookies to be set, then hard navigate
+      setTimeout(() => {
+        window.location.href = '/dashboard'
+      }, 500)
     }
   } catch (err: any) {
     error.value = err.response?.data?.message || 'Login failed. Please try again.'
@@ -94,8 +94,7 @@ const handleLogin = async () => {
 const handleGoogleLogin = async () => {
   loading.value = true
   try {
-    const deviceToken = localStorage.getItem('device_token') || undefined
-    const response = await authApi.googleLoginRedirect(deviceToken)
+    const response = await authApi.googleLoginRedirect()
     const { auth_url } = response.data
 
     window.location.href = auth_url

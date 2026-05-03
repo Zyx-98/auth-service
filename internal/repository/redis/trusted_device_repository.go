@@ -36,11 +36,25 @@ func (r *trustedDeviceRepository) Save(ctx context.Context, device *entity.Trust
 
 func (r *trustedDeviceRepository) Exists(ctx context.Context, userID uuid.UUID, token string) (bool, error) {
 	key := r.deviceKey(userID, token)
-	count, err := r.client.Exists(ctx, key).Result()
+	val, err := r.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return false, nil
+	}
 	if err != nil {
 		return false, err
 	}
-	return count > 0, nil
+
+	var device entity.TrustedDevice
+	if err := json.Unmarshal([]byte(val), &device); err != nil {
+		return false, err
+	}
+
+	if device.ExpiresAt.Before(time.Now()) {
+		_ = r.client.Del(ctx, key).Err()
+		return false, nil
+	}
+
+	return true, nil
 }
 
 func (r *trustedDeviceRepository) GetByUserID(ctx context.Context, userID uuid.UUID) ([]*entity.TrustedDevice, error) {
@@ -84,6 +98,21 @@ func (r *trustedDeviceRepository) DeleteByUserID(ctx context.Context, userID uui
 	}
 
 	return r.client.Del(ctx, keys...).Err()
+}
+
+func (r *trustedDeviceRepository) IsTrustedByUserAgentAndIP(ctx context.Context, userID uuid.UUID, userAgent, ipAddress string) (bool, error) {
+	devices, err := r.GetByUserID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+
+	for _, device := range devices {
+		if device.UserAgent == userAgent && device.IPAddress == ipAddress && device.ExpiresAt.After(time.Now()) {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 func (r *trustedDeviceRepository) deviceKey(userID uuid.UUID, token string) string {

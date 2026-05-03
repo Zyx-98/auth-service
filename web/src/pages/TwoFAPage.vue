@@ -46,6 +46,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { authApi } from '../api/auth'
+import { clearAuthCookies } from '../utils/cookie'
 
 const router = useRouter()
 const loading = ref(false)
@@ -57,7 +58,7 @@ const form = ref({
 })
 
 onMounted(() => {
-  const tempToken = localStorage.getItem('temp_token')
+  const tempToken = sessionStorage.getItem('temp_token')
   if (!tempToken) {
     router.push('/login')
   }
@@ -71,18 +72,17 @@ const handleVerify = async () => {
     const response = await authApi.verifyTwoFALogin(form.value.code, form.value.trustDevice)
     const { data } = response.data
 
-    localStorage.setItem('access_token', data.token.access_token)
-    localStorage.setItem('refresh_token', data.token.refresh_token)
-
-    // Store device token if provided
-    if (data.device_token) {
-      localStorage.setItem('device_token', data.device_token)
+    if (!data || !data.token || !data.token.access_token) {
+      throw new Error('No access token in response')
     }
 
-    localStorage.removeItem('temp_token')
-    localStorage.removeItem('user_email')
+    sessionStorage.removeItem('temp_token')
+    sessionStorage.removeItem('user_email')
 
-    router.push('/dashboard')
+    // Wait longer for cookies to be processed, then do a hard navigation
+    setTimeout(() => {
+      window.location.href = '/dashboard'
+    }, 500)
   } catch (err: any) {
     error.value = err.response?.data?.message || 'Invalid code. Please try again.'
     form.value.code = ''

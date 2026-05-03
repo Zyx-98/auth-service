@@ -19,7 +19,6 @@ import (
 	"gorm.io/gorm"
 )
 
-
 type App struct {
 	router      *gin.Engine
 	db          *gorm.DB
@@ -91,6 +90,7 @@ func (a *App) Setup(
 func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handler.OAuthHandler, totpHandler *handler.TOTPHandler, rbacHandler *handler.RBACHandler, auditLogHandler *handler.AuditLogHandler, jwtMaker *jwt.Maker) {
 	// Global middlewares
 	a.router.Use(middleware.CORSMiddleware(a.cfg.CORS.AllowedOrigins))
+	a.router.Use(middleware.CSPNonceMiddleware())
 	a.router.Use(middleware.SecurityHeadersMiddleware())
 	a.router.Use(middleware.LoggerMiddleware(a.logger))
 
@@ -108,6 +108,7 @@ func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handle
 
 		public.POST("/refresh", authHandler.Refresh)
 		public.POST("/introspect", authHandler.Introspect)
+		public.POST("/logout", middleware.OptionalAuthMiddleware(jwtMaker), authHandler.Logout)
 		public.POST("/login/google", oauthHandler.GoogleLoginRedirect)
 		public.GET("/callback/google", oauthHandler.GoogleCallback)
 		public.POST("/verify-oauth-totp", oauthHandler.VerifyOAuthTOTP)
@@ -117,7 +118,6 @@ func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handle
 	protected := a.router.Group("/auth")
 	protected.Use(middleware.AuthMiddleware(jwtMaker))
 	{
-		protected.POST("/logout", authHandler.Logout)
 		protected.POST("/logout-all", authHandler.LogoutAll)
 		protected.GET("/me", authHandler.GetProfile)
 		protected.POST("/2fa/setup", totpHandler.Setup)

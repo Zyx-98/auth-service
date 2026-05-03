@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"fmt"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -9,29 +11,54 @@ func SecurityHeadersMiddleware() gin.HandlerFunc {
 		// Prevent MIME sniffing attacks
 		c.Header("X-Content-Type-Options", "nosniff")
 
-		// Prevent clickjacking
+		// Prevent clickjacking (also covered by CSP frame-ancestors)
 		c.Header("X-Frame-Options", "DENY")
 
-		// Enable browser XSS protection
+		// Browser XSS filter (legacy, modern browsers use CSP)
 		c.Header("X-XSS-Protection", "1; mode=block")
 
 		// HTTPS enforcement (1 year, include subdomains)
-		c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
 
-		// Content Security Policy
-		// - default-src 'self': Only same-origin by default
-		// - script-src: 'unsafe-inline' and 'unsafe-eval' needed for QR code generation
-		//   (qrcode.js library uses inline script evaluation). Consider CSP nonce in future.
-		// - style-src: 'unsafe-inline' for inline styles
-		// - img-src: 'self' data: allows both same-origin images and data: URIs
-		//   (needed for QR code display as data: URI from canvas)
-		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:")
+		// Content Security Policy with nonce support
+		nonce, ok := c.Get(NonceContextKey)
+		nonceStr := ""
+		if ok {
+			nonceStr = fmt.Sprintf("'nonce-%s'", nonce)
+		}
+
+		csp := fmt.Sprintf(
+			"default-src 'self'; "+
+				"script-src 'self' %s; "+
+				"style-src 'self' %s; "+
+				"img-src 'self' data:; "+
+				"font-src 'self'; "+
+				"connect-src 'self'; "+
+				"frame-ancestors 'none'; "+
+				"form-action 'self'; "+
+				"base-uri 'self'; "+
+				"upgrade-insecure-requests",
+			nonceStr, nonceStr,
+		)
+		c.Header("Content-Security-Policy", csp)
 
 		// Referrer policy: send full URL to same-origin, origin-only to cross-origin
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 
 		// Disable access to browser features
 		c.Header("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+
+		// Prevent Flash/PDF policy abuse
+		c.Header("X-Permitted-Cross-Domain-Policies", "none")
+
+		// Cross-Origin-Embedder-Policy isolates cross-origin resources
+		c.Header("Cross-Origin-Embedder-Policy", "require-corp")
+
+		// Prevent cross-site embedding
+		c.Header("Cross-Origin-Resource-Policy", "same-site")
+
+		// Prevent DNS prefetching (slight privacy benefit)
+		c.Header("X-DNS-Prefetch-Control", "off")
 
 		c.Next()
 	}

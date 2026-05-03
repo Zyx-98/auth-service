@@ -47,6 +47,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { authApi } from '../api/auth'
+import { clearAuthCookies } from '../utils/cookie'
 
 const router = useRouter()
 const loading = ref(false)
@@ -58,7 +59,7 @@ const form = ref({
 })
 
 onMounted(() => {
-  const totpToken = localStorage.getItem('totp_token')
+  const totpToken = sessionStorage.getItem('totp_token')
   if (!totpToken) {
     router.push('/login')
   }
@@ -69,7 +70,7 @@ const handleVerify = async () => {
   loading.value = true
 
   try {
-    const totpToken = localStorage.getItem('totp_token')
+    const totpToken = sessionStorage.getItem('totp_token')
     if (!totpToken) {
       throw new Error('TOTP token not found')
     }
@@ -77,18 +78,17 @@ const handleVerify = async () => {
     const response = await authApi.verifyOAuthTOTP(form.value.code, totpToken, form.value.trustDevice)
     const { data } = response.data
 
-    localStorage.setItem('access_token', data.access_token)
-    localStorage.setItem('refresh_token', data.refresh_token)
-
-    // Store device token if provided
-    if (data.device_token) {
-      localStorage.setItem('device_token', data.device_token)
+    if (!data || !data.access_token) {
+      throw new Error('No access token in response')
     }
 
-    localStorage.removeItem('totp_token')
-    localStorage.removeItem('is_new_user')
+    sessionStorage.removeItem('totp_token')
+    sessionStorage.removeItem('is_new_user')
 
-    router.push('/dashboard')
+    // Wait longer for cookies to be processed, then do a hard navigation
+    setTimeout(() => {
+      window.location.href = '/dashboard'
+    }, 500)
   } catch (err: any) {
     error.value = err.response?.data?.message || 'Invalid code. Please try again.'
     form.value.code = ''

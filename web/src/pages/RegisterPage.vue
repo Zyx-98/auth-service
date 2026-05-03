@@ -58,6 +58,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { authApi } from '../api/auth'
+import { clearAuthCookies } from '../utils/cookie'
 
 const router = useRouter()
 const loading = ref(false)
@@ -85,10 +86,7 @@ const handleRegister = async () => {
       form.value.password,
       form.value.passwordConfirm
     )
-    const { data } = response.data
 
-    localStorage.setItem('access_token', data.access_token)
-    localStorage.setItem('refresh_token', data.refresh_token)
     router.push('/dashboard')
   } catch (err: any) {
     error.value = err.response?.data?.message || 'Registration failed. Please try again.'

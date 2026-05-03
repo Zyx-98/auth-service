@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hatuan/auth-service/internal/dto"
+	"github.com/hatuan/auth-service/internal/middleware"
 	"github.com/hatuan/auth-service/internal/service"
 	"github.com/hatuan/auth-service/pkg/apperror"
 	"github.com/hatuan/auth-service/pkg/response"
@@ -16,16 +17,16 @@ import (
 )
 
 type OAuthHandler struct {
-	oauthService  *service.OAuthService
-	redisClient   *redis.Client
-	logger        *zap.Logger
+	oauthService *service.OAuthService
+	redisClient  *redis.Client
+	logger       *zap.Logger
 }
 
 func NewOAuthHandler(oauthService *service.OAuthService, redisClient *redis.Client, logger *zap.Logger) *OAuthHandler {
 	return &OAuthHandler{
-		oauthService:  oauthService,
-		redisClient:   redisClient,
-		logger:        logger,
+		oauthService: oauthService,
+		redisClient:  redisClient,
+		logger:       logger,
 	}
 }
 
@@ -41,6 +42,8 @@ func (h *OAuthHandler) GoogleLoginRedirect(c *gin.Context) {
 	stateData := "true"
 	if req.DeviceToken != "" {
 		stateData = req.DeviceToken
+	} else if cookie, err := c.Cookie("device_token"); err == nil && cookie != "" {
+		stateData = cookie
 	}
 
 	if err := h.redisClient.Set(c.Request.Context(), "oauth_state:"+state, stateData, 10*60*time.Second).Err(); err != nil {
@@ -66,8 +69,10 @@ func (h *OAuthHandler) GoogleCallback(c *gin.Context) {
 
 	if code == "" || state == "" {
 		h.logger.Warn("Missing OAuth parameters", zap.String("code", code), zap.String("state", state))
+		nonce, _ := c.Get(middleware.NonceContextKey)
 		c.HTML(http.StatusBadRequest, "error.html", gin.H{
-			"error": "Missing code or state parameter",
+			"error":     "Missing code or state parameter",
+			"csp_nonce": nonce,
 		})
 		return
 	}
@@ -78,8 +83,10 @@ func (h *OAuthHandler) GoogleCallback(c *gin.Context) {
 	}
 	if err != nil || exists == 0 {
 		h.logger.Warn("State validation failed", zap.Error(err), zap.String("state", state), zap.Int64("exists", exists))
+		nonce, _ := c.Get(middleware.NonceContextKey)
 		c.HTML(http.StatusUnauthorized, "error.html", gin.H{
-			"error": "Invalid or expired state",
+			"error":     "Invalid or expired state",
+			"csp_nonce": nonce,
 		})
 		return
 	}
@@ -90,8 +97,10 @@ func (h *OAuthHandler) GoogleCallback(c *gin.Context) {
 	stateData, err := h.redisClient.GetDel(c.Request.Context(), "oauth_state:"+state).Result()
 	if err != nil {
 		h.logger.Error("Failed to retrieve state data", zap.Error(err), zap.String("state", state))
+		nonce, _ := c.Get(middleware.NonceContextKey)
 		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
-			"error": "Failed to retrieve state",
+			"error":     "Failed to retrieve state",
+			"csp_nonce": nonce,
 		})
 		return
 	}
@@ -99,16 +108,29 @@ func (h *OAuthHandler) GoogleCallback(c *gin.Context) {
 	deviceToken := ""
 	if stateData != "true" {
 		deviceToken = stateData
+	} else if cookie, err := c.Cookie("device_token"); err == nil && cookie != "" {
+		deviceToken = cookie
 	}
 
 	callbackResp, err := h.oauthService.HandleGoogleCallback(c.Request.Context(), code, deviceToken, c.Request.UserAgent(), c.ClientIP())
 	if err != nil {
+		nonce, _ := c.Get(middleware.NonceContextKey)
 		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
-			"error": err.Error(),
+			"error":     err.Error(),
+			"csp_nonce": nonce,
 		})
 		return
 	}
 
+	if !callbackResp.TOTPRequired {
+		middleware.SetSecureCookie(c, "access_token", callbackResp.AccessToken, 15*60)
+		middleware.SetSecureCookie(c, "refresh_token", callbackResp.RefreshToken, 7*24*60*60)
+		if callbackResp.DeviceToken != "" {
+			middleware.SetSecureCookie(c, "device_token", callbackResp.DeviceToken, 30*24*60*60)
+		}
+	}
+
+	nonce, _ := c.Get(middleware.NonceContextKey)
 	c.HTML(http.StatusOK, "oauth_callback.html", gin.H{
 		"access_token":  callbackResp.AccessToken,
 		"refresh_token": callbackResp.RefreshToken,
@@ -118,6 +140,7 @@ func (h *OAuthHandler) GoogleCallback(c *gin.Context) {
 		"is_new_user":   callbackResp.IsNewUser,
 		"totp_required": callbackResp.TOTPRequired,
 		"totp_token":    callbackResp.TOTPToken,
+		"csp_nonce":     nonce,
 	})
 }
 
@@ -143,5 +166,12 @@ func (h *OAuthHandler) VerifyOAuthTOTP(c *gin.Context) {
 		return
 	}
 
+	if oauthResp != nil {
+		middleware.SetSecureCookie(c, "access_token", oauthResp.AccessToken, 15*60)
+		middleware.SetSecureCookie(c, "refresh_token", oauthResp.RefreshToken, 7*24*60*60)
+		if oauthResp.DeviceToken != "" {
+			middleware.SetSecureCookie(c, "device_token", oauthResp.DeviceToken, 30*24*60*60)
+		}
+	}
 	response.Ok(c, oauthResp)
 }

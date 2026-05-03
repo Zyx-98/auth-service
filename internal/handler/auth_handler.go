@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hatuan/auth-service/internal/dto"
+	"github.com/hatuan/auth-service/internal/middleware"
 	"github.com/hatuan/auth-service/internal/service"
 	"github.com/hatuan/auth-service/pkg/apperror"
 	"github.com/hatuan/auth-service/pkg/response"
@@ -41,6 +42,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	if tokenResp != nil {
+		middleware.SetSecureCookie(c, "access_token", tokenResp.AccessToken, 15*60)
+		middleware.SetSecureCookie(c, "refresh_token", tokenResp.RefreshToken, 7*24*60*60)
+	}
 	response.Created(c, tokenResp)
 }
 
@@ -57,6 +62,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	if req.DeviceToken == "" {
+		if deviceToken, err := c.Cookie("device_token"); err == nil && deviceToken != "" {
+			req.DeviceToken = deviceToken
+		}
+	}
+
 	userAgent := c.Request.UserAgent()
 	ip := c.ClientIP()
 
@@ -66,6 +77,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	if loginResp != nil && loginResp.Token != nil {
+		middleware.SetSecureCookie(c, "access_token", loginResp.Token.AccessToken, 15*60)
+		middleware.SetSecureCookie(c, "refresh_token", loginResp.Token.RefreshToken, 7*24*60*60)
+		if loginResp.DeviceToken != "" {
+			middleware.SetSecureCookie(c, "device_token", loginResp.DeviceToken, 30*24*60*60)
+		}
+	}
 	response.Ok(c, loginResp)
 }
 
@@ -88,21 +106,26 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		return
 	}
 
+	if tokenResp != nil {
+		middleware.SetSecureCookie(c, "access_token", tokenResp.AccessToken, 15*60)
+		middleware.SetSecureCookie(c, "refresh_token", tokenResp.RefreshToken, 7*24*60*60)
+	}
 	response.Ok(c, tokenResp)
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {
 	jti, exists := c.Get("jti")
-	if !exists {
-		response.Error(c, apperror.Unauthorized("Missing JWT claims"))
-		return
+
+	if exists {
+		if err := h.authService.Logout(c.Request.Context(), jti.(string)); err != nil {
+			response.Error(c, apperror.InternalServerError("Failed to logout", err))
+			return
+		}
 	}
 
-	if err := h.authService.Logout(c.Request.Context(), jti.(string)); err != nil {
-		response.Error(c, apperror.InternalServerError("Failed to logout", err))
-		return
-	}
-
+	middleware.ClearSecureCookie(c, "access_token")
+	middleware.ClearSecureCookie(c, "refresh_token")
+	middleware.ClearSecureCookie(c, "device_token")
 	response.NoContent(c)
 }
 
@@ -124,6 +147,9 @@ func (h *AuthHandler) LogoutAll(c *gin.Context) {
 		return
 	}
 
+	middleware.ClearSecureCookie(c, "access_token")
+	middleware.ClearSecureCookie(c, "refresh_token")
+	middleware.ClearSecureCookie(c, "device_token")
 	response.NoContent(c)
 }
 
@@ -211,6 +237,13 @@ func (h *AuthHandler) VerifyTwoFA(c *gin.Context) {
 		return
 	}
 
+	if loginResp != nil && loginResp.Token != nil {
+		middleware.SetSecureCookie(c, "access_token", loginResp.Token.AccessToken, 15*60)
+		middleware.SetSecureCookie(c, "refresh_token", loginResp.Token.RefreshToken, 7*24*60*60)
+		if loginResp.DeviceToken != "" {
+			middleware.SetSecureCookie(c, "device_token", loginResp.DeviceToken, 30*24*60*60)
+		}
+	}
 	response.Ok(c, loginResp)
 }
 

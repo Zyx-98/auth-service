@@ -168,6 +168,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { authApi } from '../api/auth'
+import { clearAuthCookies } from '../utils/cookie'
 
 const router = useRouter()
 const loading = ref(true)
@@ -218,6 +219,10 @@ const loadProfile = async () => {
 onMounted(async () => {
   try {
     await loadProfile()
+  } catch (err: any) {
+    if (err.response?.status === 401) {
+      router.push('/login')
+    }
   } finally {
     loading.value = false
   }
@@ -411,8 +416,7 @@ const handleDisableTwoFA = async () => {
 const handleLogout = async () => {
   try {
     await authApi.logout()
-    localStorage.removeItem('access_token')
-    localStorage.removeItem('refresh_token')
+    clearAuthCookies()
     router.push('/login')
   } catch (err) {
     error.value = 'Failed to logout'

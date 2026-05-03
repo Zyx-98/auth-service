@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Google Login</title>
-    <style>
+    <style nonce="{{ .csp_nonce }}">
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             display: flex;
@@ -58,7 +58,7 @@
         <p class="success" id="status">✓ Authentication complete</p>
     </div>
 
-    <script>
+    <script nonce="{{ .csp_nonce }}">
         const data = {
             totpRequired: Boolean("{{ .totp_required }}" === "true"),
             totpToken: String("{{ .totp_token }}"),
@@ -79,8 +79,8 @@
             messageEl.textContent = 'Redirecting you to verify your authenticator...';
             statusEl.textContent = '🔐 Enter your 2FA code';
 
-            localStorage.setItem('totp_token', data.totpToken);
-            localStorage.setItem('is_new_user', data.isNewUser);
+            sessionStorage.setItem('totp_token', data.totpToken);
+            sessionStorage.setItem('is_new_user', data.isNewUser);
             setTimeout(() => {
                 window.location.href = '/2fa-verify';
             }, 500);
@@ -88,17 +88,6 @@
             titleEl.textContent = 'Login Successful';
             messageEl.textContent = 'Redirecting you back to the application...';
             statusEl.textContent = '✓ Authentication complete';
-
-            localStorage.setItem('access_token', data.accessToken);
-            localStorage.setItem('refresh_token', data.refreshToken);
-
-            // Store device token if provided (from 2FA verification)
-            if (data.deviceToken) {
-                localStorage.setItem('device_token', data.deviceToken);
-            }
-
-            // Clear the temporary device token used during OAuth
-            sessionStorage.removeItem('device_token_for_oauth');
 
             setTimeout(() => {
                 window.location.href = '/dashboard';
