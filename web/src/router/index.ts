@@ -4,6 +4,7 @@ import LoginPage from '../pages/LoginPage.vue'
 import RegisterPage from '../pages/RegisterPage.vue'
 import TwoFAPage from '../pages/TwoFAPage.vue'
 import DashboardPage from '../pages/DashboardPage.vue'
+import OAuthCallbackPage from '../pages/OAuthCallbackPage.vue'
 import { authApi } from '../api/auth'
 
 const isAuthenticated = async (): Promise<boolean> => {
@@ -44,6 +45,12 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/2fa-verify',
     redirect: '/2fa',
+  },
+  {
+    path: '/auth/callback/google',
+    name: 'OAuthCallback',
+    component: OAuthCallbackPage,
+    meta: { guestOnly: true },
   },
   {
     path: '/dashboard',

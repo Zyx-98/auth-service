@@ -44,9 +44,6 @@ func (a *App) Setup(
 	sessionRepo repository.SessionRepository,
 	auditLogRepo repository.AuditLogRepository,
 ) {
-	// Load templates for OAuth callback
-	a.router.LoadHTMLGlob("templates/*.html")
-
 	jwtMaker := jwt.NewMaker(
 		a.cfg.JWT.AccessSecret,
 		a.cfg.JWT.RefreshSecret,
@@ -94,8 +91,11 @@ func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handle
 	a.router.Use(middleware.SecurityHeadersMiddleware())
 	a.router.Use(middleware.LoggerMiddleware(a.logger))
 
+	// API v1 routes
+	api := a.router.Group("/api/v1")
+
 	// Public auth routes with rate limiting
-	public := a.router.Group("/auth")
+	public := api.Group("/auth")
 	public.Use(middleware.RateLimitMiddleware(a.redisClient, a.cfg.RateLimit.GlobalLimit))
 	{
 		registerLimited := public.Group("")
@@ -110,12 +110,12 @@ func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handle
 		public.POST("/introspect", authHandler.Introspect)
 		public.POST("/logout", middleware.OptionalAuthMiddleware(jwtMaker), authHandler.Logout)
 		public.POST("/login/google", oauthHandler.GoogleLoginRedirect)
-		public.GET("/callback/google", oauthHandler.GoogleCallback)
+		public.POST("/callback/google", oauthHandler.GoogleCallback)
 		public.POST("/verify-oauth-totp", oauthHandler.VerifyOAuthTOTP)
 	}
 
 	// Protected auth routes (requires full access token)
-	protected := a.router.Group("/auth")
+	protected := api.Group("/auth")
 	protected.Use(middleware.AuthMiddleware(jwtMaker))
 	{
 		protected.POST("/logout-all", authHandler.LogoutAll)
@@ -130,14 +130,14 @@ func (a *App) setupRoutes(authHandler *handler.AuthHandler, oauthHandler *handle
 	}
 
 	// 2FA login verification route (allows temporary tokens)
-	twoFA := a.router.Group("/auth")
+	twoFA := api.Group("/auth")
 	twoFA.Use(middleware.TwoFAMiddleware(jwtMaker))
 	{
 		twoFA.POST("/2fa/verify-login", authHandler.VerifyTwoFA)
 	}
 
 	// RBAC Routes (Admin only)
-	admin := a.router.Group("/admin")
+	admin := api.Group("/admin")
 	admin.Use(middleware.AuthMiddleware(jwtMaker))
 	admin.Use(middleware.AdminMiddleware())
 	{

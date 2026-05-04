@@ -103,7 +103,7 @@ func TestAuthMiddleware_InvalidTokenFormat(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
-	assert.Contains(t, w.Body.String(), "Invalid authorization header format")
+	assert.Contains(t, w.Body.String(), "Missing authorization header or cookie")
 }
 
 func TestTwoFAMiddleware_AcceptsTemporaryTokens(t *testing.T) {

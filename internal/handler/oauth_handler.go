@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -15,6 +16,10 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
+
+type OAuthState struct {
+	DeviceToken string `json:"device_token"`
+}
 
 type OAuthHandler struct {
 	oauthService *service.OAuthService
@@ -31,28 +36,32 @@ func NewOAuthHandler(oauthService *service.OAuthService, redisClient *redis.Clie
 }
 
 func (h *OAuthHandler) GoogleLoginRedirect(c *gin.Context) {
-	var req struct {
-		DeviceToken string `json:"device_token,omitempty"`
+	var req dto.GoogleLoginRedirectRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, apperror.BadRequest("Invalid request", err))
+		return
 	}
-	_ = c.ShouldBindJSON(&req)
 
 	state := uuid.New().String()
 
-	// Store state and device_token in Redis
-	stateData := "true"
-	if req.DeviceToken != "" {
-		stateData = req.DeviceToken
-	} else if cookie, err := c.Cookie("device_token"); err == nil && cookie != "" {
-		stateData = cookie
+	oauthState := OAuthState{DeviceToken: req.DeviceToken}
+	if oauthState.DeviceToken == "" {
+		if cookie, err := c.Cookie("device_token"); err == nil && cookie != "" {
+			oauthState.DeviceToken = cookie
+		}
 	}
 
-	if err := h.redisClient.Set(c.Request.Context(), "oauth_state:"+state, stateData, 10*60*time.Second).Err(); err != nil {
-		h.logger.Error("Failed to store OAuth state in Redis", zap.Error(err), zap.String("state", state))
+	stateJSON, err := json.Marshal(oauthState)
+	if err != nil {
+		response.Error(c, apperror.InternalServerError("Failed to create state", err))
+		return
+	}
+
+	if err := h.redisClient.Set(c.Request.Context(), "oauth_state:"+state, stateJSON, 10*60*time.Second).Err(); err != nil {
 		response.Error(c, apperror.InternalServerError("Failed to store state", err))
 		return
 	}
 
-	h.logger.Debug("OAuth state stored", zap.String("state", state))
 	authURL := h.oauthService.GetGoogleAuthURL(state)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -61,64 +70,56 @@ func (h *OAuthHandler) GoogleLoginRedirect(c *gin.Context) {
 	})
 }
 
+
 func (h *OAuthHandler) GoogleCallback(c *gin.Context) {
-	code := c.Query("code")
-	state := c.Query("state")
-
-	h.logger.Debug("OAuth callback received", zap.String("state", state), zap.String("code", code[:min(10, len(code))]))
-
-	if code == "" || state == "" {
-		h.logger.Warn("Missing OAuth parameters", zap.String("code", code), zap.String("state", state))
-		nonce, _ := c.Get(middleware.NonceContextKey)
-		c.HTML(http.StatusBadRequest, "error.html", gin.H{
-			"error":     "Missing code or state parameter",
-			"csp_nonce": nonce,
-		})
+	var req dto.GoogleLoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, apperror.BadRequest("Invalid request", err))
 		return
 	}
 
-	exists, err := h.redisClient.Exists(c.Request.Context(), "oauth_state:"+state).Result()
+	if req.Code == "" || req.State == "" {
+		h.logger.Warn("Missing OAuth parameters")
+		response.Error(c, apperror.BadRequest("Missing code or state parameter", nil))
+		return
+	}
+
+	exists, err := h.redisClient.Exists(c.Request.Context(), "oauth_state:"+req.State).Result()
 	if err != nil {
-		h.logger.Error("Redis error checking state", zap.Error(err), zap.String("state", state))
+		h.logger.Error("Redis error checking state", zap.Error(err), zap.String("state", req.State))
 	}
 	if err != nil || exists == 0 {
-		h.logger.Warn("State validation failed", zap.Error(err), zap.String("state", state), zap.Int64("exists", exists))
-		nonce, _ := c.Get(middleware.NonceContextKey)
-		c.HTML(http.StatusUnauthorized, "error.html", gin.H{
-			"error":     "Invalid or expired state",
-			"csp_nonce": nonce,
-		})
+		h.logger.Warn("State validation failed", zap.Error(err), zap.String("state", req.State), zap.Int64("exists", exists))
+		response.Error(c, apperror.Unauthorized("Invalid or expired state"))
 		return
 	}
 
-	h.logger.Debug("State validated", zap.String("state", state))
+	h.logger.Debug("State validated", zap.String("state", req.State))
 
-	// Retrieve device_token from state if present
-	stateData, err := h.redisClient.GetDel(c.Request.Context(), "oauth_state:"+state).Result()
+	stateJSON, err := h.redisClient.GetDel(c.Request.Context(), "oauth_state:"+req.State).Result()
 	if err != nil {
-		h.logger.Error("Failed to retrieve state data", zap.Error(err), zap.String("state", state))
-		nonce, _ := c.Get(middleware.NonceContextKey)
-		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
-			"error":     "Failed to retrieve state",
-			"csp_nonce": nonce,
-		})
+		h.logger.Error("Failed to retrieve state data", zap.Error(err), zap.String("state", req.State))
+		response.Error(c, apperror.InternalServerError("Failed to retrieve state", err))
 		return
 	}
 
-	deviceToken := ""
-	if stateData != "true" {
-		deviceToken = stateData
-	} else if cookie, err := c.Cookie("device_token"); err == nil && cookie != "" {
-		deviceToken = cookie
+	var oauthState OAuthState
+	if err := json.Unmarshal([]byte(stateJSON), &oauthState); err != nil {
+		h.logger.Error("Failed to unmarshal OAuth state", zap.Error(err), zap.String("state", req.State))
+		response.Error(c, apperror.InternalServerError("Failed to retrieve state", err))
+		return
 	}
 
-	callbackResp, err := h.oauthService.HandleGoogleCallback(c.Request.Context(), code, deviceToken, c.Request.UserAgent(), c.ClientIP())
+	deviceToken := oauthState.DeviceToken
+	if deviceToken == "" {
+		if cookie, err := c.Cookie("device_token"); err == nil && cookie != "" {
+			deviceToken = cookie
+		}
+	}
+
+	callbackResp, err := h.oauthService.HandleGoogleCallback(c.Request.Context(), req.Code, deviceToken, c.Request.UserAgent(), c.ClientIP())
 	if err != nil {
-		nonce, _ := c.Get(middleware.NonceContextKey)
-		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
-			"error":     err.Error(),
-			"csp_nonce": nonce,
-		})
+		response.Error(c, err)
 		return
 	}
 
@@ -130,18 +131,7 @@ func (h *OAuthHandler) GoogleCallback(c *gin.Context) {
 		}
 	}
 
-	nonce, _ := c.Get(middleware.NonceContextKey)
-	c.HTML(http.StatusOK, "oauth_callback.html", gin.H{
-		"access_token":  callbackResp.AccessToken,
-		"refresh_token": callbackResp.RefreshToken,
-		"device_token":  callbackResp.DeviceToken,
-		"expires_in":    callbackResp.ExpiresIn,
-		"token_type":    callbackResp.TokenType,
-		"is_new_user":   callbackResp.IsNewUser,
-		"totp_required": callbackResp.TOTPRequired,
-		"totp_token":    callbackResp.TOTPToken,
-		"csp_nonce":     nonce,
-	})
+	response.Ok(c, callbackResp)
 }
 
 func (h *OAuthHandler) VerifyOAuthTOTP(c *gin.Context) {

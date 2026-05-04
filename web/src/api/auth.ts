@@ -48,14 +48,14 @@ client.interceptors.response.use(
       originalRequest &&
       !originalRequest._retry &&
       !originalRequest.skipAuthRefresh &&
-      originalRequest.url !== '/auth/logout' &&
-      originalRequest.url !== '/auth/refresh'
+      originalRequest.url !== '/api/v1/auth/logout' &&
+      originalRequest.url !== '/api/v1/auth/refresh'
     ) {
       originalRequest._retry = true
 
       try {
-        const response = await axios.post(`${apiUrl}/auth/refresh`, {
-          refresh_token: '', 
+        const response = await axios.post(`${apiUrl}/api/v1/auth/refresh`, {
+          refresh_token: '',
         }, {
           withCredentials: true
         })
@@ -76,36 +76,36 @@ client.interceptors.response.use(
 
 export const authApi = {
   register: (email: string, password: string, passwordConfirm: string) =>
-    client.post('/auth/register', { email, password, password_confirm: passwordConfirm }),
+    client.post('/api/v1/auth/register', { email, password, password_confirm: passwordConfirm }),
 
   login: (email: string, password: string, deviceToken?: string) =>
-    client.post('/auth/login', {
+    client.post('/api/v1/auth/login', {
       email,
       password,
       ...(deviceToken && { device_token: deviceToken })
     }),
 
   refreshToken: (refreshToken: string) =>
-    client.post('/auth/refresh', { refresh_token: refreshToken }),
+    client.post('/api/v1/auth/refresh', { refresh_token: refreshToken }),
 
   logout: () =>
-    client.post('/auth/logout', undefined, { skipAuthRefresh: true } as AuthRequestConfig),
+    client.post('/api/v1/auth/logout', undefined, { skipAuthRefresh: true } as AuthRequestConfig),
 
   getProfile: (config?: Partial<AuthRequestConfig>) =>
-    client.get('/auth/me', config),
+    client.get('/api/v1/auth/me', config),
 
   introspect: (token: string) =>
-    client.post('/auth/introspect', { token }),
+    client.post('/api/v1/auth/introspect', { token }),
 
   setupTwoFA: () =>
-    client.post('/auth/2fa/setup'),
+    client.post('/api/v1/auth/2fa/setup'),
 
   verifyTwoFA: (code: string) =>
-    client.post('/auth/2fa/verify', { code }),
+    client.post('/api/v1/auth/2fa/verify', { code }),
 
   verifyTwoFALogin: (code: string, trustDevice: boolean = false) => {
     const tempToken = sessionStorage.getItem('temp_token')
-    return client.post('/auth/2fa/verify-login', { code, trust_device: trustDevice }, {
+    return client.post('/api/v1/auth/2fa/verify-login', { code, trust_device: trustDevice }, {
       headers: {
         Authorization: `Bearer ${tempToken}`
       }
@@ -113,24 +113,24 @@ export const authApi = {
   },
 
   disableTwoFA: (code: string) =>
-    client.post('/auth/2fa/disable', { code }),
+    client.post('/api/v1/auth/2fa/disable', { code }),
 
   googleLoginRedirect: (deviceToken?: string) =>
-    client.post('/auth/login/google', {
+    client.post('/api/v1/auth/login/google', {
       ...(deviceToken && { device_token: deviceToken })
     }),
 
   googleCallback: (code: string, state: string) =>
-    client.post('/auth/callback/google', { code, state }),
+    client.post('/api/v1/auth/callback/google', { code, state }, { skipAuthRefresh: true } as AuthRequestConfig),
 
   verifyOAuthTOTP: (code: string, totpToken: string, trustDevice: boolean = false) =>
-    client.post('/auth/verify-oauth-totp', { code, totp_token: totpToken, trust_device: trustDevice }),
+    client.post('/api/v1/auth/verify-oauth-totp', { code, totp_token: totpToken, trust_device: trustDevice }),
 
   getTrustedDevices: () =>
-    client.get('/auth/trusted-devices'),
+    client.get('/api/v1/auth/trusted-devices'),
 
   revokeTrustedDevices: () =>
-    client.delete('/auth/trusted-devices'),
+    client.delete('/api/v1/auth/trusted-devices'),
 }
 
 export default client
