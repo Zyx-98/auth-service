@@ -2,19 +2,15 @@
   <div class="twofa-container">
     <div class="twofa-box">
       <h1>Two-Factor Authentication</h1>
-      <p class="subtitle">{{ subtitle }}</p>
 
       <form @submit.prevent="handleVerify">
         <div class="form-group">
-          <label for="code">Authentication Code:</label>
+          <label for="code">Authentication Code or Backup Code:</label>
           <input
             id="code"
             v-model="form.code"
             type="text"
-            inputmode="numeric"
-            placeholder="000000"
-            maxlength="6"
-            pattern="[0-9]{6}"
+            placeholder="XXXXXX"
             required
             autofocus
             @input="normalizeCode"
@@ -58,13 +54,12 @@ const form = ref({
   trustDevice: false,
 })
 
-const isOAuthFlow = computed(() => !!sessionStorage.getItem('totp_token'))
-const subtitle = computed(() =>
-  isOAuthFlow.value
-    ? 'Your account has 2FA enabled. Enter the 6-digit code from your authenticator app.'
-    : 'Enter the 6-digit code from your authenticator app'
-)
-const canSubmit = computed(() => /^[0-9]{6}$/.test(form.value.code))
+const canSubmit = computed(() => {
+  const codeWithoutHyphen = form.value.code.replace('-', '')
+  const isTotp = /^[0-9]{6}$/.test(codeWithoutHyphen)
+  const isBackupCode = /^[A-Z0-9]{6,8}$/.test(codeWithoutHyphen)
+  return isTotp || isBackupCode
+})
 
 onMounted(() => {
   const tempToken = sessionStorage.getItem('temp_token')
@@ -75,7 +70,8 @@ onMounted(() => {
 })
 
 const normalizeCode = () => {
-  form.value.code = form.value.code.replace(/\D/g, '').slice(0, 6)
+  const input = form.value.code.toUpperCase()
+  form.value.code = input.replace(/[^A-Z0-9\-]/g, '').slice(0, 8)
 }
 
 const handleVerify = async () => {
@@ -102,8 +98,21 @@ const handleVerify = async () => {
       window.location.href = '/dashboard'
     }, 500)
   } catch (err: any) {
-    error.value = err.response?.data?.message || 'Invalid code. Please try again.'
-    form.value.code = ''
+    const errorCode = err.response?.data?.code
+    const message = err.response?.data?.message
+
+    if (errorCode === 'expired_2fa_session') {
+      error.value = 'Session expired. Please log in again.'
+      setTimeout(() => {
+        router.push('/login')
+      }, 1500)
+    } else if (errorCode === 'invalid_2fa_code') {
+      error.value = message || 'Invalid code. Please try again.'
+      form.value.code = ''
+    } else {
+      error.value = message || 'Invalid code. Please try again.'
+      form.value.code = ''
+    }
   } finally {
     loading.value = false
   }
