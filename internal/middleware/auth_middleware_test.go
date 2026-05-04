@@ -9,7 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/hatuan/auth-service/pkg/jwt"
+	"github.com/Zyx-98/auth-service/pkg/jwt"
 	"github.com/stretchr/testify/assert"
 )
 

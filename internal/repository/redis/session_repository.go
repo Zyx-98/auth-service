@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hatuan/auth-service/internal/domain/entity"
-	"github.com/hatuan/auth-service/internal/domain/repository"
+	"github.com/Zyx-98/auth-service/internal/domain/entity"
+	"github.com/Zyx-98/auth-service/internal/domain/repository"
 	"github.com/redis/go-redis/v9"
 )
 

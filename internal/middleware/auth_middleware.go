@@ -4,9 +4,9 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/hatuan/auth-service/pkg/apperror"
-	"github.com/hatuan/auth-service/pkg/jwt"
-	"github.com/hatuan/auth-service/pkg/response"
+	"github.com/Zyx-98/auth-service/pkg/apperror"
+	"github.com/Zyx-98/auth-service/pkg/jwt"
+	"github.com/Zyx-98/auth-service/pkg/response"
 )
 
 func AuthMiddleware(jwtMaker *jwt.Maker) gin.HandlerFunc {

@@ -8,12 +8,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hatuan/auth-service/internal/domain/entity"
-	"github.com/hatuan/auth-service/internal/domain/repository"
-	"github.com/hatuan/auth-service/internal/dto"
-	"github.com/hatuan/auth-service/pkg/apperror"
-	"github.com/hatuan/auth-service/pkg/hash"
-	"github.com/hatuan/auth-service/pkg/jwt"
+	"github.com/Zyx-98/auth-service/internal/domain/entity"
+	"github.com/Zyx-98/auth-service/internal/domain/repository"
+	"github.com/Zyx-98/auth-service/internal/dto"
+	"github.com/Zyx-98/auth-service/pkg/apperror"
+	"github.com/Zyx-98/auth-service/pkg/hash"
+	"github.com/Zyx-98/auth-service/pkg/jwt"
 )
 
 type AuthService struct {

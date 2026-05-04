@@ -2,7 +2,7 @@ package validator
 
 import (
 	"github.com/go-playground/validator/v10"
-	"github.com/hatuan/auth-service/pkg/response"
+	"github.com/Zyx-98/auth-service/pkg/response"
 )
 
 var v = validator.New()

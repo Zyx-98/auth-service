@@ -10,11 +10,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/hatuan/auth-service/internal/domain/entity"
-	"github.com/hatuan/auth-service/internal/domain/repository"
-	"github.com/hatuan/auth-service/internal/service"
-	"github.com/hatuan/auth-service/pkg/jwt"
-	"github.com/hatuan/auth-service/pkg/totp"
+	"github.com/Zyx-98/auth-service/internal/domain/entity"
+	"github.com/Zyx-98/auth-service/internal/domain/repository"
+	"github.com/Zyx-98/auth-service/internal/service"
+	"github.com/Zyx-98/auth-service/pkg/jwt"
+	"github.com/Zyx-98/auth-service/pkg/totp"
 )
 
 // Mock repositories for handler tests

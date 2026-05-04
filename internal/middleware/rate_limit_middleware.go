@@ -5,8 +5,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/hatuan/auth-service/pkg/apperror"
-	"github.com/hatuan/auth-service/pkg/response"
+	"github.com/Zyx-98/auth-service/pkg/apperror"
+	"github.com/Zyx-98/auth-service/pkg/response"
 	redisclient "github.com/redis/go-redis/v9"
 	"github.com/ulule/limiter/v3"
 	redisstore "github.com/ulule/limiter/v3/drivers/store/redis"

@@ -2,7 +2,7 @@ package response
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/hatuan/auth-service/pkg/apperror"
+	"github.com/Zyx-98/auth-service/pkg/apperror"
 	"net/http"
 )
 

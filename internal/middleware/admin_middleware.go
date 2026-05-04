@@ -2,8 +2,8 @@ package middleware
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/hatuan/auth-service/pkg/apperror"
-	"github.com/hatuan/auth-service/pkg/response"
+	"github.com/Zyx-98/auth-service/pkg/apperror"
+	"github.com/Zyx-98/auth-service/pkg/response"
 )
 
 func AdminMiddleware() gin.HandlerFunc {

@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	"github.com/hatuan/auth-service/internal/domain/entity"
+	"github.com/Zyx-98/auth-service/internal/domain/entity"
 )
 
 type PermissionRepository interface {
