@@ -5,6 +5,10 @@ type GoogleLoginRequest struct {
 	State string `json:"state" validate:"required"`
 }
 
+type GoogleLoginRedirectRequest struct {
+	DeviceToken string `json:"device_token,omitempty"`
+}
+
 type OAuthCallbackResponse struct {
 	AccessToken  string `json:"access_token,omitempty"`
 	RefreshToken string `json:"refresh_token,omitempty"`

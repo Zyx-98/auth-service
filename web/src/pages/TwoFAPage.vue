@@ -2,7 +2,7 @@
   <div class="twofa-container">
     <div class="twofa-box">
       <h1>Two-Factor Authentication</h1>
-      <p class="subtitle">Enter the 6-digit code from your authenticator app</p>
+      <p class="subtitle">{{ subtitle }}</p>
 
       <form @submit.prevent="handleVerify">
         <div class="form-group">
@@ -16,6 +16,8 @@
             maxlength="6"
             pattern="[0-9]{6}"
             required
+            autofocus
+            @input="normalizeCode"
           />
         </div>
 
@@ -28,7 +30,7 @@
           <label for="trust" class="checkbox-label">Trust this device for 30 days</label>
         </div>
 
-        <button type="submit" :disabled="loading || form.code.length !== 6">
+        <button type="submit" :disabled="loading || !canSubmit">
           {{ loading ? 'Verifying...' : 'Verify' }}
         </button>
 
@@ -43,7 +45,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { authApi } from '../api/auth'
 
@@ -56,33 +58,49 @@ const form = ref({
   trustDevice: false,
 })
 
+const isOAuthFlow = computed(() => !!sessionStorage.getItem('totp_token'))
+const subtitle = computed(() =>
+  isOAuthFlow.value
+    ? 'Your account has 2FA enabled. Enter the 6-digit code from your authenticator app.'
+    : 'Enter the 6-digit code from your authenticator app'
+)
+const canSubmit = computed(() => /^[0-9]{6}$/.test(form.value.code))
+
 onMounted(() => {
-  const tempToken = localStorage.getItem('temp_token')
-  if (!tempToken) {
+  const tempToken = sessionStorage.getItem('temp_token')
+  const totpToken = sessionStorage.getItem('totp_token')
+  if (!tempToken && !totpToken) {
     router.push('/login')
   }
 })
+
+const normalizeCode = () => {
+  form.value.code = form.value.code.replace(/\D/g, '').slice(0, 6)
+}
 
 const handleVerify = async () => {
   error.value = ''
   loading.value = true
 
   try {
-    const response = await authApi.verifyTwoFALogin(form.value.code, form.value.trustDevice)
+    const totpToken = sessionStorage.getItem('totp_token')
+    const response = totpToken
+      ? await authApi.verifyOAuthTOTP(form.value.code, totpToken, form.value.trustDevice)
+      : await authApi.verifyTwoFALogin(form.value.code, form.value.trustDevice)
     const { data } = response.data
 
-    localStorage.setItem('access_token', data.token.access_token)
-    localStorage.setItem('refresh_token', data.token.refresh_token)
-
-    // Store device token if provided
-    if (data.device_token) {
-      localStorage.setItem('device_token', data.device_token)
+    if (!data?.access_token && !data?.token?.access_token) {
+      throw new Error('No access token in response')
     }
 
-    localStorage.removeItem('temp_token')
-    localStorage.removeItem('user_email')
+    sessionStorage.removeItem('temp_token')
+    sessionStorage.removeItem('user_email')
+    sessionStorage.removeItem('totp_token')
+    sessionStorage.removeItem('is_new_user')
 
-    router.push('/dashboard')
+    setTimeout(() => {
+      window.location.href = '/dashboard'
+    }, 500)
   } catch (err: any) {
     error.value = err.response?.data?.message || 'Invalid code. Please try again.'
     form.value.code = ''

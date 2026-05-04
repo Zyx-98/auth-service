@@ -1,5 +1,12 @@
 import axios from 'axios'
-import type { AxiosInstance } from 'axios'
+import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios'
+import { getAccessToken, clearAuthCookies } from '../utils/cookie'
+
+interface AuthRequestConfig extends InternalAxiosRequestConfig {
+  _retry?: boolean
+  skipAuthRefresh?: boolean
+  skipAuthRedirect?: boolean
+}
 
 const getApiUrl = (): string => {
   if (import.meta.env.VITE_API_URL) {
@@ -14,17 +21,19 @@ const apiUrl = getApiUrl()
 
 const client: AxiosInstance = axios.create({
   baseURL: apiUrl,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
 })
 
-// Request interceptor to add access token
+// Request interceptor to add access token from cookie
 client.interceptors.request.use((config) => {
-  const token = localStorage.getItem('access_token')
+  const token = getAccessToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
+  config.withCredentials = true
   return config
 })
 
@@ -32,31 +41,32 @@ client.interceptors.request.use((config) => {
 client.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalRequest = error.config
+    const originalRequest = error.config as AuthRequestConfig | undefined
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (
+      error.response?.status === 401 &&
+      originalRequest &&
+      !originalRequest._retry &&
+      !originalRequest.skipAuthRefresh &&
+      originalRequest.url !== '/api/v1/auth/logout' &&
+      originalRequest.url !== '/api/v1/auth/refresh'
+    ) {
       originalRequest._retry = true
 
       try {
-        const refreshToken = localStorage.getItem('refresh_token')
-        if (!refreshToken) {
-          throw new Error('No refresh token')
-        }
-
-        const response = await axios.post(`${apiUrl}/auth/refresh`, {
-          refresh_token: refreshToken,
+        const response = await axios.post(`${apiUrl}/api/v1/auth/refresh`, {
+          refresh_token: '',
+        }, {
+          withCredentials: true
         })
 
-        const { access_token, refresh_token } = response.data.data
-        localStorage.setItem('access_token', access_token)
-        localStorage.setItem('refresh_token', refresh_token)
-
-        originalRequest.headers.Authorization = `Bearer ${access_token}`
+        originalRequest.headers.Authorization = `Bearer ${response.data.data.access_token}`
         return client(originalRequest)
-      } catch {
-        localStorage.removeItem('access_token')
-        localStorage.removeItem('refresh_token')
-        window.location.href = '/login'
+      } catch (err) {
+        clearAuthCookies()
+        if (!originalRequest.skipAuthRedirect && window.location.pathname !== '/login') {
+          window.location.href = '/login'
+        }
       }
     }
 
@@ -66,36 +76,36 @@ client.interceptors.response.use(
 
 export const authApi = {
   register: (email: string, password: string, passwordConfirm: string) =>
-    client.post('/auth/register', { email, password, password_confirm: passwordConfirm }),
+    client.post('/api/v1/auth/register', { email, password, password_confirm: passwordConfirm }),
 
   login: (email: string, password: string, deviceToken?: string) =>
-    client.post('/auth/login', {
+    client.post('/api/v1/auth/login', {
       email,
       password,
       ...(deviceToken && { device_token: deviceToken })
     }),
 
   refreshToken: (refreshToken: string) =>
-    client.post('/auth/refresh', { refresh_token: refreshToken }),
+    client.post('/api/v1/auth/refresh', { refresh_token: refreshToken }),
 
   logout: () =>
-    client.post('/auth/logout'),
+    client.post('/api/v1/auth/logout', undefined, { skipAuthRefresh: true } as AuthRequestConfig),
 
-  getProfile: () =>
-    client.get('/auth/me'),
+  getProfile: (config?: Partial<AuthRequestConfig>) =>
+    client.get('/api/v1/auth/me', config),
 
   introspect: (token: string) =>
-    client.post('/auth/introspect', { token }),
+    client.post('/api/v1/auth/introspect', { token }),
 
   setupTwoFA: () =>
-    client.post('/auth/2fa/setup'),
+    client.post('/api/v1/auth/2fa/setup'),
 
   verifyTwoFA: (code: string) =>
-    client.post('/auth/2fa/verify', { code }),
+    client.post('/api/v1/auth/2fa/verify', { code }),
 
   verifyTwoFALogin: (code: string, trustDevice: boolean = false) => {
-    const tempToken = localStorage.getItem('temp_token')
-    return client.post('/auth/2fa/verify-login', { code, trust_device: trustDevice }, {
+    const tempToken = sessionStorage.getItem('temp_token')
+    return client.post('/api/v1/auth/2fa/verify-login', { code, trust_device: trustDevice }, {
       headers: {
         Authorization: `Bearer ${tempToken}`
       }
@@ -103,24 +113,24 @@ export const authApi = {
   },
 
   disableTwoFA: (code: string) =>
-    client.post('/auth/2fa/disable', { code }),
+    client.post('/api/v1/auth/2fa/disable', { code }),
 
   googleLoginRedirect: (deviceToken?: string) =>
-    client.post('/auth/login/google', {
+    client.post('/api/v1/auth/login/google', {
       ...(deviceToken && { device_token: deviceToken })
     }),
 
   googleCallback: (code: string, state: string) =>
-    client.post('/auth/callback/google', { code, state }),
+    client.post('/api/v1/auth/callback/google', { code, state }, { skipAuthRefresh: true } as AuthRequestConfig),
 
   verifyOAuthTOTP: (code: string, totpToken: string, trustDevice: boolean = false) =>
-    client.post('/auth/verify-oauth-totp', { code, totp_token: totpToken, trust_device: trustDevice }),
+    client.post('/api/v1/auth/verify-oauth-totp', { code, totp_token: totpToken, trust_device: trustDevice }),
 
   getTrustedDevices: () =>
-    client.get('/auth/trusted-devices'),
+    client.get('/api/v1/auth/trusted-devices'),
 
   revokeTrustedDevices: () =>
-    client.delete('/auth/trusted-devices'),
+    client.delete('/api/v1/auth/trusted-devices'),
 }
 
 export default client
