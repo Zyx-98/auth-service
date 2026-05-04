@@ -14,6 +14,7 @@ type User struct {
 	IsVerified    bool
 	TOTPSecret    *string
 	TOTPEnabled   bool
+	BackupCodes   *string   `gorm:"type:text"`
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	Roles         []Role `gorm:"many2many:user_roles"`

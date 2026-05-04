@@ -16,7 +16,8 @@ type TOTPVerifyRequest struct {
 }
 
 type TOTPVerifyResponse struct {
-	Verified bool `json:"verified"`
+	Verified    bool     `json:"verified"`
+	BackupCodes []string `json:"backup_codes,omitempty"`
 }
 
 type TOTPDisableRequest struct {

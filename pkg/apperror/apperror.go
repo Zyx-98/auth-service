@@ -52,3 +52,11 @@ func Conflict(message string, err error) *AppError {
 func InternalServerError(message string, err error) *AppError {
 	return NewAppError("internal_server_error", message, http.StatusInternalServerError, err)
 }
+
+func InvalidTwoFACode(message string) *AppError {
+	return NewAppError("invalid_2fa_code", message, http.StatusUnprocessableEntity, nil)
+}
+
+func ExpiredTwoFASession(message string) *AppError {
+	return NewAppError("expired_2fa_session", message, http.StatusUnauthorized, nil)
+}

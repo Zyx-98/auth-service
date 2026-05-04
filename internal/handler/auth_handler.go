@@ -224,7 +224,7 @@ func (h *AuthHandler) VerifyTwoFA(c *gin.Context) {
 	}
 
 	if !valid {
-		response.Error(c, apperror.Unauthorized("Invalid 2FA code"))
+		response.Error(c, apperror.InvalidTwoFACode("Invalid 2FA code"))
 		return
 	}
 

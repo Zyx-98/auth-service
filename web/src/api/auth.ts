@@ -100,8 +100,8 @@ export const authApi = {
   setupTwoFA: () =>
     client.post('/api/v1/auth/2fa/setup'),
 
-  verifyTwoFA: (code: string) =>
-    client.post('/api/v1/auth/2fa/verify', { code }),
+  enableTwoFA: (code: string) =>
+    client.post('/api/v1/auth/2fa/enable', { code }),
 
   verifyTwoFALogin: (code: string, trustDevice: boolean = false) => {
     const tempToken = sessionStorage.getItem('temp_token')

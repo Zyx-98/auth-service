@@ -71,11 +71,10 @@
             <input
               v-model="verificationCode"
               type="text"
-              placeholder="000000"
-              maxlength="6"
-              inputmode="numeric"
+              placeholder="XXXXXX"
               class="code-input"
               @keyup.enter="handleVerify2FA"
+              @input="normalizeVerificationCode"
             />
             <p class="hint">This ensures your authenticator app is working correctly</p>
           </div>
@@ -87,7 +86,7 @@
             v-if="showVerification"
             @click="handleVerify2FA"
             class="btn-verify"
-            :disabled="verificationCode.length !== 6 || verifyLoading"
+            :disabled="!isValidCode(verificationCode) || verifyLoading"
           >
             {{ verifyLoading ? 'Verifying...' : 'Verify & Enable' }}
           </button>
@@ -253,22 +252,32 @@ const handleSetupTwoFA = async () => {
   }
 }
 
+const normalizeVerificationCode = () => {
+  const input = verificationCode.value.toUpperCase()
+  verificationCode.value = input.replace(/[^A-Z0-9\-]/g, '').slice(0, 8)
+}
+
+const isValidCode = (code: string): boolean => {
+  const codeWithoutHyphen = code.replace('-', '').toUpperCase()
+  const isTotp = /^[0-9]{6}$/.test(codeWithoutHyphen)
+  const isBackupCode = /^[A-Z0-9]{6,8}$/.test(codeWithoutHyphen)
+  return isTotp || isBackupCode
+}
+
 const handleVerify2FA = async () => {
-  if (verificationCode.value.length !== 6) return
+  if (!isValidCode(verificationCode.value)) return
 
   verifyLoading.value = true
   verifyMessage.value = ''
   try {
-    await authApi.verifyTwoFA(verificationCode.value)
+    const response = await authApi.enableTwoFA(verificationCode.value)
 
     verifyMessage.value = 'Verification successful! 2FA is now enabled.'
     verifyMessageType.value = 'success'
 
-    // Show backup codes
     setTimeout(() => {
       close2FAModal()
-      // Generate mock backup codes (in real scenario, these come from API)
-      backupCodes.value = generateBackupCodes()
+      backupCodes.value = response.data.data.backup_codes || []
       showBackupCodesModal.value = true
     }, 1000)
 
@@ -293,15 +302,6 @@ const close2FAModal = () => {
 const closeBackupCodesModal = () => {
   showBackupCodesModal.value = false
   backupCodes.value = []
-}
-
-const generateBackupCodes = (): string[] => {
-  const codes: string[] = []
-  for (let i = 0; i < 8; i++) {
-    const code = Math.random().toString(36).substring(2, 10).toUpperCase()
-    codes.push(code.substring(0, 4) + '-' + code.substring(4, 8))
-  }
-  return codes
 }
 
 const copyBackupCodes = async () => {
@@ -396,7 +396,7 @@ const formatDate = (dateString: string): string => {
 }
 
 const handleDisableTwoFA = async () => {
-  const code = prompt('Enter your 6-digit authenticator code to disable 2FA:')
+  const code = prompt('Enter your 6-digit code or backup code to disable 2FA:')
   if (!code) return
 
   disableLoading.value = true
