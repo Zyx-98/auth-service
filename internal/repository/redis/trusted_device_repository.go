@@ -25,6 +25,26 @@ func NewTrustedDeviceRepository(client *redis.Client, ttl time.Duration) reposit
 }
 
 func (r *trustedDeviceRepository) Save(ctx context.Context, device *entity.TrustedDevice) error {
+	fingerprint := device.Fingerprint()
+	existingDevices, err := r.GetByUserID(ctx, device.UserID)
+	if err != nil {
+		return err
+	}
+
+	for _, existing := range existingDevices {
+		if existing.Fingerprint() == fingerprint {
+			oldKey := r.deviceKey(device.UserID, existing.Token)
+			r.client.Del(ctx, oldKey)
+
+			existing.ExpiresAt = device.ExpiresAt
+			existing.Token = device.Token
+			existing.Name = device.Name
+			data, _ := json.Marshal(existing)
+			newKey := r.deviceKey(device.UserID, device.Token)
+			return r.client.Set(ctx, newKey, data, r.ttl).Err()
+		}
+	}
+
 	data, err := json.Marshal(device)
 	if err != nil {
 		return err

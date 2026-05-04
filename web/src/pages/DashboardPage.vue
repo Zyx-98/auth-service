@@ -142,8 +142,9 @@
           <div v-else class="devices-list">
             <div v-for="device in devices" :key="device.token" class="device-item">
               <div class="device-info">
-                <p class="device-name">{{ device.name || 'Unknown Device' }}</p>
+                <p class="device-name">{{ device.name }}</p>
                 <p class="device-meta">Trusted on {{ formatDate(device.created_at) }}</p>
+                <p class="device-meta" v-if="device.expires_at">Expires {{ formatDate(device.expires_at) }}</p>
                 <p class="device-ip" v-if="device.ip_address">{{ device.ip_address }}</p>
               </div>
               <button @click="removeDevice(device.token)" class="btn-remove" :disabled="removingDevice">Remove</button>
