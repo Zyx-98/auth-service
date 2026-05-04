@@ -214,6 +214,23 @@ type mockTrustedDeviceRepo struct {
 }
 
 func (m *mockTrustedDeviceRepo) Save(ctx context.Context, device *entity.TrustedDevice) error {
+	fingerprint := device.Fingerprint()
+	existingDevices, _ := m.GetByUserID(ctx, device.UserID)
+
+	for _, existing := range existingDevices {
+		if existing.Fingerprint() == fingerprint {
+			oldKey := existing.UserID.String() + ":" + existing.Token
+			delete(m.devices, oldKey)
+
+			existing.ExpiresAt = device.ExpiresAt
+			existing.Token = device.Token
+			existing.Name = device.Name
+			newKey := existing.UserID.String() + ":" + device.Token
+			m.devices[newKey] = existing
+			return nil
+		}
+	}
+
 	key := device.UserID.String() + ":" + device.Token
 	m.devices[key] = device
 	return nil
@@ -306,4 +323,99 @@ func TestAuthHandler_Setup(t *testing.T) {
 	assert.NotNil(t, handler)
 	assert.NotNil(t, handler.authService)
 	assert.NotNil(t, handler.totpService)
+}
+
+func TestTrustedDeviceDeduplication(t *testing.T) {
+	ctx := context.Background()
+	userID := uuid.New()
+	userAgent := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+	ipAddress := "192.168.1.100"
+
+	trustedDeviceRepo := &mockTrustedDeviceRepo{devices: make(map[string]*entity.TrustedDevice)}
+
+	device1 := entity.NewTrustedDevice(userID, "token1", userAgent, ipAddress, "Chrome on Windows", time.Now().Add(30*24*time.Hour))
+	err := trustedDeviceRepo.Save(ctx, device1)
+	assert.NoError(t, err)
+
+	devices, err := trustedDeviceRepo.GetByUserID(ctx, userID)
+	assert.NoError(t, err)
+	assert.Len(t, devices, 1)
+	assert.Equal(t, "Chrome on Windows", devices[0].Name)
+
+	device2 := entity.NewTrustedDevice(userID, "token2", userAgent, ipAddress, "Chrome on Windows", time.Now().Add(30*24*time.Hour))
+	err = trustedDeviceRepo.Save(ctx, device2)
+	assert.NoError(t, err)
+
+	devices, err = trustedDeviceRepo.GetByUserID(ctx, userID)
+	assert.NoError(t, err)
+	assert.Len(t, devices, 1)
+	assert.Equal(t, "token2", devices[0].Token)
+
+	_, exists := trustedDeviceRepo.devices["192.168.1.100:token1"]
+	assert.False(t, exists, "old token should be removed")
+
+	_, exists = trustedDeviceRepo.devices[userID.String()+":token2"]
+	assert.True(t, exists, "new token should exist")
+}
+
+func TestTrustedDeviceFingerprint(t *testing.T) {
+	userID := uuid.New()
+	userAgent := "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+	ipAddress := "192.168.1.100"
+
+	device1 := entity.NewTrustedDevice(userID, "token1", userAgent, ipAddress, "Chrome on Windows", time.Now().Add(30*24*time.Hour))
+	device2 := entity.NewTrustedDevice(userID, "token2", userAgent, ipAddress, "Chrome on Windows", time.Now().Add(30*24*time.Hour))
+	device3 := entity.NewTrustedDevice(userID, "token3", "Different User Agent", ipAddress, "Safari on macOS", time.Now().Add(30*24*time.Hour))
+
+	assert.Equal(t, device1.Fingerprint(), device2.Fingerprint())
+	assert.NotEqual(t, device1.Fingerprint(), device3.Fingerprint())
+}
+
+func TestTrustedDeviceDifferentFingerprints(t *testing.T) {
+	ctx := context.Background()
+	userID := uuid.New()
+	ipAddress := "192.168.1.100"
+
+	trustedDeviceRepo := &mockTrustedDeviceRepo{devices: make(map[string]*entity.TrustedDevice)}
+
+	userAgent1 := "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+	device1 := entity.NewTrustedDevice(userID, "token1", userAgent1, ipAddress, "Chrome on Windows", time.Now().Add(30*24*time.Hour))
+	err := trustedDeviceRepo.Save(ctx, device1)
+	assert.NoError(t, err)
+
+	userAgent2 := "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
+	device2 := entity.NewTrustedDevice(userID, "token2", userAgent2, ipAddress, "Safari on macOS", time.Now().Add(30*24*time.Hour))
+	err = trustedDeviceRepo.Save(ctx, device2)
+	assert.NoError(t, err)
+
+	devices, err := trustedDeviceRepo.GetByUserID(ctx, userID)
+	assert.NoError(t, err)
+	assert.Len(t, devices, 2, "different user agents should create separate devices")
+
+	exists1, err := trustedDeviceRepo.Exists(ctx, userID, "token1")
+	assert.NoError(t, err)
+	exists2, err := trustedDeviceRepo.Exists(ctx, userID, "token2")
+	assert.NoError(t, err)
+	assert.True(t, exists1)
+	assert.True(t, exists2)
+}
+
+func TestTrustedDeviceDifferentIPs(t *testing.T) {
+	ctx := context.Background()
+	userID := uuid.New()
+	userAgent := "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+
+	trustedDeviceRepo := &mockTrustedDeviceRepo{devices: make(map[string]*entity.TrustedDevice)}
+
+	device1 := entity.NewTrustedDevice(userID, "token1", userAgent, "192.168.1.100", "Chrome on Windows", time.Now().Add(30*24*time.Hour))
+	err := trustedDeviceRepo.Save(ctx, device1)
+	assert.NoError(t, err)
+
+	device2 := entity.NewTrustedDevice(userID, "token2", userAgent, "10.0.0.50", "Chrome on Windows", time.Now().Add(30*24*time.Hour))
+	err = trustedDeviceRepo.Save(ctx, device2)
+	assert.NoError(t, err)
+
+	devices, err := trustedDeviceRepo.GetByUserID(ctx, userID)
+	assert.NoError(t, err)
+	assert.Len(t, devices, 2, "different IPs should create separate devices")
 }

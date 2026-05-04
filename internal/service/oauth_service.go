@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"regexp"
 	"time"
 
 	"github.com/google/uuid"
@@ -120,8 +121,9 @@ func (s *OAuthService) buildFullOAuthResponse(ctx context.Context, user *entity.
 
 	if trustDevice {
 		deviceToken := s.generateDeviceToken()
+		deviceName := s.generateDeviceName(userAgent)
 		expiresAt := time.Now().Add(30 * 24 * time.Hour)
-		device := entity.NewTrustedDevice(user.ID, deviceToken, userAgent, ip, expiresAt)
+		device := entity.NewTrustedDevice(user.ID, deviceToken, userAgent, ip, deviceName, expiresAt)
 
 		if err := s.trustedDeviceRepo.Save(ctx, device); err != nil {
 			return nil, apperror.InternalServerError("Failed to save trusted device", err)
@@ -281,4 +283,40 @@ func (s *OAuthService) generateDeviceToken() string {
 		return uuid.New().String()
 	}
 	return hex.EncodeToString(b)
+}
+
+func (s *OAuthService) generateDeviceName(userAgent string) string {
+	browsers := map[*regexp.Regexp]string{
+		regexp.MustCompile(`(?i)edg[e/]`):                    "Edge",
+		regexp.MustCompile(`(?i)chrome`):                     "Chrome",
+		regexp.MustCompile(`(?i)safari`):                     "Safari",
+		regexp.MustCompile(`(?i)firefox`):                    "Firefox",
+		regexp.MustCompile(`(?i)opera`):                      "Opera",
+	}
+
+	systems := map[*regexp.Regexp]string{
+		regexp.MustCompile(`(?i)windows`):                    "Windows",
+		regexp.MustCompile(`(?i)macintosh|mac os x`):         "macOS",
+		regexp.MustCompile(`(?i)linux`):                      "Linux",
+		regexp.MustCompile(`(?i)iphone|ios`):                 "iPhone",
+		regexp.MustCompile(`(?i)android`):                    "Android",
+	}
+
+	browser := "Unknown Browser"
+	for pattern, name := range browsers {
+		if pattern.MatchString(userAgent) {
+			browser = name
+			break
+		}
+	}
+
+	system := "Unknown OS"
+	for pattern, name := range systems {
+		if pattern.MatchString(userAgent) {
+			system = name
+			break
+		}
+	}
+
+	return browser + " on " + system
 }
