@@ -3,7 +3,6 @@ import type { RouteRecordRaw } from 'vue-router'
 import LoginPage from '../pages/LoginPage.vue'
 import RegisterPage from '../pages/RegisterPage.vue'
 import TwoFAPage from '../pages/TwoFAPage.vue'
-import OAuthTwoFAPage from '../pages/OAuthTwoFAPage.vue'
 import DashboardPage from '../pages/DashboardPage.vue'
 import { authApi } from '../api/auth'
 
@@ -40,13 +39,11 @@ const routes: RouteRecordRaw[] = [
     path: '/2fa',
     name: 'TwoFA',
     component: TwoFAPage,
-    meta: { guestOnly: true, requiresTempToken: true },
+    meta: { guestOnly: true, requiresTwoFAToken: true },
   },
   {
     path: '/2fa-verify',
-    name: 'OAuthTwoFA',
-    component: OAuthTwoFAPage,
-    meta: { guestOnly: true, requiresOAuthTOTPToken: true },
+    redirect: '/2fa',
   },
   {
     path: '/dashboard',
@@ -75,11 +72,11 @@ router.beforeEach(async (to) => {
     return '/dashboard'
   }
 
-  if (to.meta.requiresTempToken && !sessionStorage.getItem('temp_token')) {
-    return '/login'
-  }
-
-  if (to.meta.requiresOAuthTOTPToken && !sessionStorage.getItem('totp_token')) {
+  if (
+    to.meta.requiresTwoFAToken &&
+    !sessionStorage.getItem('temp_token') &&
+    !sessionStorage.getItem('totp_token')
+  ) {
     return '/login'
   }
 })

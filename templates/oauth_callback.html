@@ -82,7 +82,7 @@
             sessionStorage.setItem('totp_token', data.totpToken);
             sessionStorage.setItem('is_new_user', data.isNewUser);
             setTimeout(() => {
-                window.location.href = '/2fa-verify';
+                window.location.href = '/2fa';
             }, 500);
         } else {
             titleEl.textContent = 'Login Successful';
