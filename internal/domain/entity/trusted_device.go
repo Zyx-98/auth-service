@@ -33,6 +33,6 @@ func NewTrustedDevice(userID uuid.UUID, token, userAgent, ipAddress, name string
 
 func (d *TrustedDevice) Fingerprint() string {
 	h := md5.New()
-	io.WriteString(h, d.UserAgent+d.IPAddress)
+	_, _ = io.WriteString(h, d.UserAgent+d.IPAddress)
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
