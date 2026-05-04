@@ -86,7 +86,6 @@ func TwoFAMiddleware(jwtMaker *jwt.Maker) gin.HandlerFunc {
 			return
 		}
 
-		// Only allow tokens with 2fa:verify permission
 		if !hasPermission(claims.Permissions, "2fa:verify") {
 			response.Error(c, apperror.Unauthorized("Insufficient permissions for 2FA verification"))
 			c.Abort()

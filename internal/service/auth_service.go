@@ -341,7 +341,7 @@ func (s *AuthService) IssueTempTokens(ctx context.Context, userID uuid.UUID) (*d
 	return s.IssueTokens(ctx, user)
 }
 
-func (s *AuthService) IssueTempTokensWithTrust(ctx context.Context, userID uuid.UUID, userAgent, ip string, trustDevice bool) (*dto.LoginResponse, error) {
+func (s *AuthService) IssueTokensWithTrust(ctx context.Context, userID uuid.UUID, userAgent, ip string, trustDevice bool) (*dto.LoginResponse, error) {
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return nil, apperror.InternalServerError("Failed to fetch user", err)

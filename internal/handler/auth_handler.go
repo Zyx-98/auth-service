@@ -231,7 +231,7 @@ func (h *AuthHandler) VerifyTwoFA(c *gin.Context) {
 	userAgent := c.Request.UserAgent()
 	ip := c.ClientIP()
 
-	loginResp, err := h.authService.IssueTempTokensWithTrust(c.Request.Context(), userID, userAgent, ip, req.TrustDevice)
+	loginResp, err := h.authService.IssueTokensWithTrust(c.Request.Context(), userID, userAgent, ip, req.TrustDevice)
 	if err != nil {
 		response.Error(c, err)
 		return
